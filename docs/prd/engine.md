@@ -366,9 +366,9 @@ Cash + Marketable Securities proyectados:
     Cash_MktSec = Cash_MktSec_anterior / ABS(DeudaNeta_anterior) * ABS(DeudaNeta_actual)
   Años siguientes: Cash_MktSec = Cash_MktSec_anterior / ABS(DeudaNeta_anterior) * ABS(DeudaNeta_actual)
 
-  Cash individual: primer año mantiene proporción Cash/Total del último histórico;
-                   años siguientes se escala proporcionalmente a ventas
-  Marketable Securities: misma lógica que Cash
+  Cash individual: Cash = (Cash_anterior / CashMktSec_anterior) * CashMktSec_actual
+  Marketable Securities: MktSec = (MktSec_anterior / CashMktSec_anterior) * CashMktSec_actual
+  (ambos mantienen la proporción sobre el total Cash+MktSec para todos los años proyectados)
 
 Deuda Total proyectada:
   si Deuda_Neta > 0: Deuda_Total = Deuda_Neta + Cash_MktSec
