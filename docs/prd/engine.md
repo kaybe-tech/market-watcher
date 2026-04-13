@@ -8,568 +8,780 @@ Recibe datos financieros históricos (10 años) y el precio actual de una acció
 
 ## Problema
 
-El proceso actual de valorización es completamente manual:
-
-1. Buscar datos financieros en InvestingPro
-2. Copiar manualmente los datos del Income Statement, Balance Sheet y Cash Flow a una plantilla Excel
-3. Ajustar proyecciones y múltiplos objetivo manualmente
-4. Revisar los resultados celda por celda
-
-Esto limita el análisis a ~30 empresas al mes. El primer paso para escalar es automatizar el cálculo: dado un set de datos financieros, producir la valorización completa sin intervención manual.
+El método de valorización por múltiplos, validado por años de uso, está atrapado en una plantilla Excel. Cada empresa requiere llenar la plantilla manualmente, lo que limita la capacidad de análisis y hace imposible automatizar señales de compra/venta a escala.
 
 ## Solución
 
-Un motor de cálculo puro — sin IO, sin base de datos, sin API — que:
-
-- Recibe datos financieros crudos + precio actual
-- Ejecuta la misma lógica que la plantilla Excel
-- Retorna la valorización completa
+Codificar el método de valorización como un motor de cálculo reutilizable. Recibe datos financieros pre-formateados y produce la misma valorización que la plantilla Excel, sirviendo como pieza fundamental para la automatización del sistema completo.
 
 ## Arquitectura
+
+### Estructura del proyecto
 
 ```
 market-watcher/
 ├── packages/
 │   └── valuation-engine/
 │       ├── src/
-│       │   ├── types.ts          <- Interfaces de entrada, salida y tipos intermedios
-│       │   ├── historical.ts     <- Fase 1: análisis de datos históricos
-│       │   ├── projection.ts     <- Fase 2: proyección año a año
-│       │   ├── valuation.ts      <- Fase 3: valoración por múltiplos
-│       │   ├── red-flags.ts      <- Fase 4: detección de red flags
-│       │   └── engine.ts         <- Orquestador: conecta las 4 fases
+│       │   ├── company-valuation.ts      <- Orquestador principal
+│       │   ├── historical-year.ts        <- Año histórico: inputs → derivados
+│       │   ├── projected-year.ts         <- Año proyectado: anterior + assumptions → derivados
+│       │   ├── projection-assumptions.ts <- Promedios/ratios históricos
+│       │   ├── multiples.ts              <- Múltiplos LTM/NTM/objetivo
+│       │   ├── intrinsic-value.ts        <- Precio objetivo, CAGR, precio de compra
+│       │   └── index.ts                  <- Export público
 │       └── tests/
-│           └── fixtures/         <- Datos de Amazon para validación
+│           └── fixtures/                 <- Datos de Nvidia, Amazon, Nike y Costco para validación
 ├── turbo.json
 └── package.json
 ```
 
 Tecnologías: Bun, Turborepo, TypeScript.
 
-### Arquitectura interna del engine
+### Modelo de datos
 
-El motor se organiza en 4 fases que se ejecutan secuencialmente:
+#### HistoricalYear
 
-```
-Input ──► Fase 1: Análisis histórico ──► Fase 2: Proyección ──► Fase 3: Valoración ──► Fase 4: Red Flags ──► Output
-```
-
-**Fase 1 — Análisis histórico** (`historical.ts`): Lee los 10 años de datos y calcula los promedios y ratios que alimentan las proyecciones (crecimiento de ventas, margen EBIT, tax rate, crecimiento de acciones, ratios de interés, capex mantenimiento, working capital, proporciones de deuda, etc.). Produce un objeto `ProjectionParams`.
-
-**Fase 2 — Proyección año a año** (`projection.ts`): Proyecta los 5 años futuros en un loop secuencial donde cada año usa los resultados del año anterior. **Dentro de cada año, los cálculos se entrelazan entre estados financieros**: primero se proyecta el Income Statement (usando datos del Balance Sheet anterior para interest), luego el Free Cash Flow (usando el IS recién calculado), luego el Balance Sheet (usando IS y FCF), y finalmente ROIC (usando IS y BS). Esta es la fase más compleja del engine.
+Recibe los inputs de un año y computa todos los campos derivados. Contiene cuatro sub-objetos que reflejan los tabs del Excel. Los cálculos cruzan libremente entre sub-objetos del mismo año. Los campos se computan en orden de dependencia.
 
 ```
-Para cada año [2025e..2029e]:
-  is  = f(prev.is, prev.bs, params)        <- interest depende de deuda anterior
-  fcf = f(is, prev.bs, params)             <- usa EBITDA, taxes del IS actual
-  bs  = f(prev.bs, is, fcf, params)        <- equity depende de NI y FCF
-  roic = f(is, bs)                         <- cruza IS y BS del año actual
+HistoricalYear
+├── year: number
+├── incomeStatement
+├── freeCashFlow
+├── roic
+└── valuation
 ```
 
-Los Pasos 1, 2 y 3 del proceso de cálculo (detallados más abajo) no se ejecutan secuencialmente — se entrelazan dentro de este loop. Los pasos están documentados por tema para facilitar la referencia de fórmulas, pero la ejecución real es año por año, cruzando los tres estados financieros en cada iteración.
+**Inputs**
 
-**Fase 3 — Valoración** (`valuation.ts`): Toma los 5 años proyectados y el precio actual. Calcula múltiplos LTM y objetivo (NTM), precio objetivo por 4 métodos para cada año, margen de seguridad, CAGR a 5 años y precio de compra para 15% de retorno.
+| Sub-objeto | Campo | Tipo | Nota |
+|---|---|---|---|
+| | year | number | |
+| | currentPrice | number | |
+| incomeStatement | sales | number | Positivo |
+| incomeStatement | depreciationAmortization | number | Negativo. Proviene de los flujos de caja operativos |
+| incomeStatement | ebit | number | Negativo si hay pérdida operativa |
+| incomeStatement | interestExpense | number | Negativo |
+| incomeStatement | interestIncome | number | Positivo |
+| incomeStatement | taxExpense | number | Negativo. Positivo solo si es devolución de impuestos |
+| incomeStatement | minorityInterests | number | Positivo. Mismo signo que el reporte financiero |
+| incomeStatement | fullyDilutedShares | number | En millones |
+| freeCashFlow | capitalExpenditure | number | |
+| freeCashFlow | saleOfIntangibleAssets | number | |
+| freeCashFlow | saleOfPPE | number | |
+| freeCashFlow | inventories | number | |
+| freeCashFlow | accountsReceivable | number | |
+| freeCashFlow | accountsPayable | number | |
+| freeCashFlow | unearnedRevenue | number | |
+| freeCashFlow | netChangeInCash | number | |
+| freeCashFlow | cashAcquisitions | number | |
+| freeCashFlow | dividendsPaid | number | |
+| freeCashFlow | repurchaseOfCommonStock | number | |
+| freeCashFlow | totalDebtRepaid | number | |
+| freeCashFlow | totalDebtIssued | number | |
+| roic | cashAndEquivalents | number | |
+| roic | marketableSecurities | number | |
+| roic | shortTermDebt | number | |
+| roic | longTermDebt | number | |
+| roic | currentOperatingLeases | number | |
+| roic | nonCurrentOperatingLeases | number | |
+| roic | equity | number | |
 
-**Fase 4 — Red Flags** (`red-flags.ts`): Escanea los 10 años históricos contando años que cumplen condiciones de alerta (ventas decrecientes, margen operativo en baja, FCF negativo, ROIC bajo, deuda elevada).
+**Campos**
 
-**Orquestador** (`engine.ts`): Conecta las 4 fases en secuencia:
+*incomeStatement*
 
-```
-valuate(input) {
-  params     = analyzeHistorical(input)           // Fase 1
-  projected  = projectAll(input, params)          // Fase 2
-  valuation  = computeValuation(projected, price) // Fase 3
-  redFlags   = detectRedFlags(input)              // Fase 4
-  return { projected, valuation, redFlags }
-}
-```
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| sales | number | input | |
+| salesYoYGrowth | number \| null | calculado | `(sales - prev.sales) / prev.sales`. Null si no hay año anterior |
+| ebitda | number | calculado | `ebit - depreciationAmortization` |
+| ebitdaMargin | number | calculado | `ebitda / sales` |
+| ebitdaYoYGrowth | number \| null | calculado | `(ebitda - prev.ebitda) / prev.ebitda`. Null si no hay año anterior |
+| depreciationAmortization | number | input | Negativo |
+| ebit | number | input | |
+| ebitMargin | number | calculado | `ebit / sales` |
+| ebitYoYGrowth | number \| null | calculado | `(ebit - prev.ebit) / prev.ebit`. Null si no hay año anterior |
+| interestExpense | number | input | Negativo |
+| interestIncome | number | input | Positivo |
+| totalInterest | number | calculado | `interestExpense + interestIncome` |
+| earningsBeforeTaxes | number | calculado | `ebit + totalInterest` |
+| taxExpense | number | input | Negativo |
+| taxRate | number \| null | calculado | `ABS(taxExpense) / earningsBeforeTaxes`. Null si EBT es 0 |
+| consolidatedNetIncome | number | calculado | `earningsBeforeTaxes + taxExpense` |
+| minorityInterests | number | input | Positivo |
+| netIncome | number | calculado | `consolidatedNetIncome + minorityInterests` |
+| netMargin | number | calculado | `netIncome / sales` |
+| netIncomeYoYGrowth | number \| null | calculado | `(netIncome - prev.netIncome) / prev.netIncome`. Null si no hay año anterior |
+| fullyDilutedShares | number | input | En millones |
+| fullyDilutedSharesYoYGrowth | number \| null | calculado | `(shares - prev.shares) / prev.shares`. Null si no hay año anterior |
+| eps | number | calculado | `netIncome / fullyDilutedShares` |
+| epsYoYGrowth | number \| null | calculado | `(eps - prev.eps) / prev.eps`. Null si no hay año anterior |
 
-## Datos de entrada
+*freeCashFlow*
 
-El engine recibe un único objeto con toda la información necesaria para valorizar una empresa. Los datos financieros se agrupan por año, y dentro de cada año por estado financiero (`is`, `bs`, `cf`). Los valores monetarios están en millones excepto donde se indique.
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| ebitda | number | calculado | `incomeStatement.ebitda` |
+| capitalExpenditure | number | input | |
+| saleOfIntangibleAssets | number | input | |
+| saleOfPPE | number | input | |
+| capexNeto | number | calculado | `capitalExpenditure + saleOfIntangibleAssets + saleOfPPE` |
+| capexMaintenance | number | calculado | `IF(ABS(capexNeto) < ABS(is.depreciationAmortization), capexNeto, is.depreciationAmortization)` |
+| totalInterest | number | calculado | `incomeStatement.totalInterest` |
+| taxesPaid | number | calculado | `incomeStatement.taxExpense` |
+| inventories | number | input | |
+| accountsReceivable | number | input | |
+| accountsPayable | number | input | |
+| unearnedRevenue | number | input | |
+| workingCapital | number | calculado | `inventories + accountsReceivable - accountsPayable - unearnedRevenue` |
+| changeInWorkingCapital | number \| null | calculado | `workingCapital - prev.workingCapital`. Null si no hay año anterior |
+| otherAdjustments | number | calculado | `incomeStatement.minorityInterests` |
+| fcf | number | calculado | `ebitda + capexMaintenance + totalInterest + taxesPaid - changeInWorkingCapital + otherAdjustments` |
+| fcfMargin | number | calculado | `fcf / incomeStatement.sales` |
+| fcfYoYGrowth | number \| null | calculado | `(fcf - prev.fcf) / prev.fcf`. Null si no hay año anterior |
+| fcfPerShare | number | calculado | `fcf / incomeStatement.fullyDilutedShares` |
+| fcfPerShareYoYGrowth | number \| null | calculado | `(fcfPerShare - prev.fcfPerShare) / prev.fcfPerShare`. Null si no hay año anterior |
+| netChangeInCash | number | input | |
+| capexMaintenanceSalesRatio | number | calculado | `ABS(capexMaintenance) / incomeStatement.sales` |
+| workingCapitalSalesRatio | number | calculado | `workingCapital / incomeStatement.sales` |
+| fcfSalesRatio | number | calculado | `fcf / incomeStatement.sales` |
+| cashConversion | number \| null | calculado | `fcf / ebitda`. Null si EBITDA es 0 |
+| cashAcquisitions | number | input | |
+| dividendsPaid | number | input | |
+| repurchaseOfCommonStock | number | input | |
+| totalDebtRepaid | number | input | |
+| totalDebtIssued | number | input | |
+| capexExpansion | number \| null | calculado | `ABS(capexNeto - capexMaintenance) / fcf`. Null si FCF <= 0 |
+| acquisitions | number \| null | calculado | `ABS(cashAcquisitions) / fcf`. Null si FCF <= 0 |
+| dividends | number \| null | calculado | `ABS(dividendsPaid) / fcf`. Null si FCF <= 0 |
+| buybacks | number \| null | calculado | `ABS(repurchaseOfCommonStock) / fcf`. Null si FCF <= 0 |
+| netDebtRepayment | number \| null | calculado | `MAX(ABS(totalDebtRepaid) - totalDebtIssued, 0) / fcf`. Null si FCF <= 0 |
+| totalCapitalAllocation | number \| null | calculado | `capexExpansion + acquisitions + dividends + buybacks + netDebtRepayment`. Null si FCF <= 0 |
 
-### Estructura general
+*roic*
 
-```json
-{
-  "ticker": "AMZN",
-  "companyName": "Amazon.com Inc",
-  "sector": "Technology",
-  "currentPrice": 214.75,
-  "financials": {
-    "2015": {
-      "is": { "totalRevenues": 107006, "..." : "..." },
-      "bs": { "cashAndEquivalents": 15890, "..." : "..." },
-      "cf": { "netIncome": 596, "..." : "..." }
-    },
-    "2016": { "is": { "..." : "..." }, "bs": { "..." : "..." }, "cf": { "..." : "..." } },
-    "...": "hasta 2024"
-  }
-}
-```
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| ebitAfterTax | number | calculado | `incomeStatement.ebit * (1 - incomeStatement.taxRate)` |
+| cashAndEquivalents | number | input | |
+| marketableSecurities | number | input | |
+| shortTermDebt | number | input | |
+| longTermDebt | number | input | |
+| currentOperatingLeases | number | input | |
+| nonCurrentOperatingLeases | number | input | |
+| equity | number | input | |
+| investedCapital | number | calculado | `equity + shortTermDebt + longTermDebt + currentOperatingLeases + nonCurrentOperatingLeases - marketableSecurities` |
+| roe | number \| null | calculado | `incomeStatement.netIncome / equity`. Null si equity es 0 |
+| roic | number \| null | calculado | `ebitAfterTax / investedCapital`. Null si investedCapital es 0 |
+| reinvestmentRate | number \| null | calculado | `ABS(freeCashFlow.capexNeto - freeCashFlow.capexMaintenance + freeCashFlow.cashAcquisitions) / freeCashFlow.fcf`. Null si FCF <= 0 |
 
-Se esperan 10 años de datos históricos (típicamente 2015–2024). El año es la unidad principal de agrupación porque las fórmulas cruzan estados financieros libremente dentro de un mismo año. Los sub-objetos `is`, `bs` y `cf` mantienen la distinción por estado financiero para evitar colisiones de nombres (ej: `netIncome` existe en IS y CF) y preservar la semántica del dominio.
+*valuation*
 
-### Income Statement (`is`)
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| marketCap | number | calculado | `currentPrice * incomeStatement.fullyDilutedShares` |
+| netDebt | number | calculado | `(roic.shortTermDebt + roic.longTermDebt) - (roic.cashAndEquivalents + roic.marketableSecurities)` |
+| netDebtEbitdaRatio | number \| null | calculado | `netDebt / incomeStatement.ebitda`. Null si EBITDA es 0 |
+| enterpriseValue | number | calculado | `marketCap + netDebt` |
 
-```json
-{
-  "totalRevenues": 107006,
-  "costOfGoodsSold": -71651,
-  "grossProfit": 35355,
-  "sellingGeneralAdmin": -20411,
-  "rdExpenses": -12540,
-  "otherOperatingExpenses": -171,
-  "totalOperatingExpenses": -33122,
-  "operatingIncome": 2233,
-  "interestExpense": -459,
-  "interestAndInvestmentIncome": 50,
-  "ebtExclUnusualItems": 1551,
-  "gainLossOnSaleOfInvestments": -5,
-  "assetWritedown": 0,
-  "ebtInclUnusualItems": 1546,
-  "incomeTaxExpense": -950,
-  "minorityInterest": 0,
-  "netIncome": 596,
-  "dilutedEPS": 0.06,
-  "weightedAvgDilutedShares": 9540,
-  "ebitda": 7879,
-  "stockBasedCompensation": 2119,
-  "effectiveTaxRate": 0.614,
-  "marketCap": 316832,
-  "tev": 320991
-}
-```
+**Orden de cálculo**
 
-### Balance Sheet (`bs`)
+Cada campo solo puede calcularse después de que todas sus dependencias estén disponibles.
 
-```json
-{
-  "cashAndEquivalents": 15890,
-  "shortTermInvestments": 3918,
-  "accountsReceivable": 5654,
-  "inventory": 10243,
-  "totalCurrentAssets": 35705,
-  "netPropertyPlantEquipment": 21838,
-  "goodwill": 3759,
-  "totalAssets": 64747,
-  "accountsPayable": 20397,
-  "shortTermBorrowings": 0,
-  "currentPortionLongTermDebt": 238,
-  "currentPortionCapitalLeases": 3099,
-  "unearnedRevenueCurrent": 5118,
-  "totalCurrentLiabilities": 33887,
-  "longTermDebt": 8227,
-  "capitalLeases": 5948,
-  "unearnedRevenueNonCurrent": 0,
-  "totalLiabilities": 51363,
-  "totalEquity": 13384,
-  "totalSharesOutstanding": 9417
-}
-```
+*incomeStatement* (16 campos calculados):
 
-### Cash Flow (`cf`)
+1. ebitda
+2. salesYoYGrowth
+3. ebitdaMargin
+4. ebitdaYoYGrowth
+5. ebitMargin
+6. ebitYoYGrowth
+7. totalInterest
+8. fullyDilutedSharesYoYGrowth
+9. earningsBeforeTaxes
+10. taxRate
+11. consolidatedNetIncome
+12. netIncome
+13. netMargin
+14. netIncomeYoYGrowth
+15. eps
+16. epsYoYGrowth
 
-```json
-{
-  "netIncome": 596,
-  "depreciationAmortization": 5376,
-  "amortizationGoodwillIntangibles": 270,
-  "stockBasedCompensation": 2119,
-  "changeInAccountsReceivable": -1755,
-  "changeInInventories": -2187,
-  "changeInAccountsPayable": 4294,
-  "changeInUnearnedRevenues": 1292,
-  "cashFromOperations": 12039,
-  "capitalExpenditure": -5387,
-  "saleOfIntangibleAssets": 0,
-  "saleOfPPE": 0,
-  "cashAcquisitions": -795,
-  "investmentInMarketableSecurities": -1066,
-  "cashFromInvesting": -6450,
-  "totalDebtIssued": 353,
-  "totalDebtRepaid": -4235,
-  "repurchaseOfCommonStock": 0,
-  "dividendsPaid": 0,
-  "cashFromFinancing": -3882,
-  "netChangeInCash": 1333,
-  "freeCashFlow": 6652
-}
-```
+*freeCashFlow* (23 campos calculados):
 
-### Sectores y flujos de valorización
+17. ebitda
+18. capexNeto
+19. capexMaintenance
+20. totalInterest
+21. taxesPaid
+22. workingCapital
+23. changeInWorkingCapital
+24. otherAdjustments
+25. fcf
+26. fcfMargin
+27. fcfYoYGrowth
+28. fcfPerShare
+29. fcfPerShareYoYGrowth
+30. capexMaintenanceSalesRatio
+31. workingCapitalSalesRatio
+32. fcfSalesRatio
+33. cashConversion
+34. capexExpansion
+35. acquisitions
+36. dividends
+37. buybacks
+38. netDebtRepayment
+39. totalCapitalAllocation
 
-El sector de la empresa determina qué flujo de valorización se utiliza:
+*roic* (5 campos calculados):
 
-| Flujo de valorización | Sectores |
-|---|---|
-| **General** (Módulo 7) | Technology, Healthcare, Consumer Cyclical, Consumer Defensive, Industrials, Basic Materials, Communication Services, Energy, Utilities |
-| **Financieras** (Módulo 15) | Financial Services |
-| **REITs** (Módulo 16) | Real Estate |
+40. ebitAfterTax
+41. investedCapital
+42. roe
+43. roic
+44. reinvestmentRate
 
-Solo se implementa el flujo General. Si el sector es Financial Services o Real Estate, el engine retorna un error indicando que el flujo no está disponible.
+*valuation* (4 campos calculados):
 
-## Proceso de cálculo
+45. marketCap
+46. netDebt
+47. netDebtEbitdaRatio
+48. enterpriseValue
 
-El motor replica exactamente las fórmulas de la Plantilla de Valoración General (Módulo 7, IDC v2024.3). Todas las proyecciones se calculan automáticamente usando promedios históricos.
+#### ProjectionAssumptions
 
-### Mapeo de variables a campos del input
-
-Las fórmulas de esta sección usan nombres cortos. Esta tabla mapea cada variable al campo exacto del input:
-
-| Variable en fórmulas | Campo del input | Notas |
-|---|---|---|
-| Sales | `is.totalRevenues` | |
-| D&A | `cf.depreciationAmortization` + `cf.amortizationGoodwillIntangibles` | Suma de ambos. Valores positivos en el input |
-| EBIT | `is.operatingIncome` | |
-| EBITDA | Calculado | `EBIT + ABS(D&A)` en proyecciones. Histórico: `is.ebitda` |
-| Interest Expense | `is.interestExpense` | Valor negativo en el input |
-| Interest Income | `is.interestAndInvestmentIncome` | |
-| EBT | Calculado | `EBIT + Total Interest`. No usa `is.ebtInclUnusualItems` |
-| Tax | `is.incomeTaxExpense` | Valor negativo en el input |
-| Tax Rate | Calculado | `ABS(is.incomeTaxExpense) / EBT` por año, luego se promedia. No usa `is.effectiveTaxRate` |
-| Minority Interests | `is.minorityInterest` | |
-| Net Income | `is.netIncome` | |
-| EPS | `is.dilutedEPS` | |
-| Shares | `is.weightedAvgDilutedShares` | |
-| Market Cap | `is.marketCap` | Solo para histórico |
-| EV (Enterprise Value) | Calculado | `precio_actual * Shares + Deuda_Neta`. No usa `is.tev` |
-| SBC | `is.stockBasedCompensation` | |
-| Cash | `bs.cashAndEquivalents` | |
-| Marketable Securities | `bs.shortTermInvestments` | = Total Cash & ST Investments - Cash |
-| ST Debt | `bs.shortTermBorrowings` + `bs.currentPortionLongTermDebt` | Suma de ambos campos |
-| LT Debt | `bs.longTermDebt` | |
-| Current Operating Leases | `bs.currentPortionCapitalLeases` | El Excel usa capital leases como proxy |
-| NonCurrent Operating Leases | `bs.capitalLeases` | El Excel usa capital leases como proxy |
-| Equity | `bs.totalEquity` | |
-| Inventory | `bs.inventory` | |
-| AR (Accounts Receivable) | `bs.accountsReceivable` | |
-| AP (Accounts Payable) | `bs.accountsPayable` | |
-| Unearned Revenue | `bs.unearnedRevenueCurrent` + `bs.unearnedRevenueNonCurrent` | Suma de ambos |
-| Capital Expenditure | `cf.capitalExpenditure` | Valor negativo en el input |
-| Sale of Intangible Assets | `cf.saleOfIntangibleAssets` | |
-| Sale of PPE | `cf.saleOfPPE` | |
-| FCF | `cf.freeCashFlow` | |
-| Dividends Paid | `cf.dividendsPaid` | |
-| Repurchase of Common Stock | `cf.repurchaseOfCommonStock` | |
-| Total Debt Issued | `cf.totalDebtIssued` | |
-| Total Debt Repaid | `cf.totalDebtRepaid` | Valor negativo en el input |
-| Cash Acquisitions | `cf.cashAcquisitions` | Valor negativo en el input |
-
-### Paso 1: Income Statement proyectado (5 años)
-
-Proyecciones automáticas (constantes los 5 años):
-
-| Campo | Fórmula default |
-|---|---|
-| Crecimiento de ventas | `AVERAGE(YoY growth de los 9 años disponibles)` |
-| Margen EBIT | `AVERAGE(EBIT/Sales de los 10 años)` |
-| Tax rate | `AVERAGE(ABS(incomeTaxExpense) / EBT de los 10 años)` donde EBT = EBIT + Total Interest |
-| Crecimiento acciones | `AVERAGE(YoY share growth de los 9 años)` |
-
-Cálculos derivados por año proyectado:
+Promedios y ratios calculados desde los años históricos. Constantes para los 5 años proyectados.
 
 ```
-Sales = Sales_anterior * (1 + crecimiento_ventas)
-D&A = D&A_anterior * (1 + crecimiento_ventas)
-  donde D&A = cf.depreciationAmortization + cf.amortizationGoodwillIntangibles
-EBIT = Sales * margen_EBIT
-EBITDA = EBIT + ABS(D&A)
-Interest Expense = -(avg_%_interest_expense * (ST_Debt + LT_Debt))
-  donde avg_%_interest_expense = ABS(SUM(interestExpense histórico)) / SUM(ST_Debt + LT_Debt histórico)
-Interest Income = avg_%_interest_income * Marketable_Securities
-  donde avg_%_interest_income = SUM(interestAndInvestmentIncome histórico) / SUM(shortTermInvestments histórico)
-Total Interest = Interest_Expense + Interest_Income
-EBT = EBIT + Total_Interest
-Tax = -EBT * tax_rate
-  donde tax_rate = AVERAGE(ABS(incomeTaxExpense[y]) / (EBIT[y] + TotalInterest[y]) para cada año)
-Consolidated Net Income = EBT + Tax
-Minority Interests = (MI_anterior / ConsolidatedNI_anterior) * ConsolidatedNI_actual
-  (mantiene la proporción de MI sobre Consolidated NI del año anterior)
-Net Income = Consolidated_Net_Income + Minority_Interests
-Shares = Shares_anterior * (1 + crecimiento_acciones)
-EPS = Net_Income / Shares
+ProjectionAssumptions
+├── incomeStatement
+├── freeCashFlow
+└── roic
 ```
 
-### Paso 2: Free Cash Flow proyectado
+**Inputs**
+
+| Sub-objeto | Campo | Tipo | Nota |
+|---|---|---|---|
+| | historical | { [year]: HistoricalYear } | Años históricos completos |
+
+**Campos**
+
+*incomeStatement*
+
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| salesGrowth | number | calculado | `avg(salesYoYGrowth)` de los 9 años disponibles |
+| ebitMargin | number | calculado | `avg(ebitMargin)` de los 10 años |
+| taxRate | number | calculado | `avg(taxRate)` de los 10 años |
+| shareGrowth | number | calculado | `avg(fullyDilutedSharesYoYGrowth)` de los 9 años disponibles |
+| interestExpenseRate | number | calculado | `ABS(sum(interestExpense)) / sum(roic.shortTermDebt + roic.longTermDebt)` de los 10 años |
+| interestIncomeRate | number | calculado | `sum(interestIncome) / sum(roic.marketableSecurities)` de los 10 años |
+
+*freeCashFlow*
+
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| capexMaintenanceSalesRatio | number | calculado | `(lastHistCapexMaintenance * (1 + salesGrowth)) / (lastHistSales * salesGrowth)` |
+| cwcSalesRatio | number | calculado | `sum(changeInWorkingCapital) / sum(sales excluyendo primer año)` de los 9 años |
+
+*roic*
+
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| netDebtEbitdaRatio | number | calculado | `avg(valuation.netDebtEbitdaRatio)` de los 10 años |
+
+**Orden de cálculo**
+
+*incomeStatement* (6 campos):
+
+1. salesGrowth
+2. ebitMargin
+3. taxRate
+4. shareGrowth
+5. interestExpenseRate
+6. interestIncomeRate
+
+*freeCashFlow* (2 campos) — depende de incomeStatement.salesGrowth:
+
+7. capexMaintenanceSalesRatio
+8. cwcSalesRatio
+
+*roic* (1 campo):
+
+9. netDebtEbitdaRatio
+
+#### ProjectedYear
+
+Recibe el año anterior y los `ProjectionAssumptions` para computar todos los campos. Contiene los mismos cuatro sub-objetos que `HistoricalYear`. El cálculo cruza entre sub-objetos: el IS se computa en dos partes (antes y después de la descomposición de deuda).
 
 ```
-CapEx Mtto proyectado = -ratio_capex_mantenimiento * Sales  (valor negativo)
-  donde ratio_capex_mantenimiento = ABS(lastHistCapexMtto * (1 + salesGrowth)) / firstProjSales
-  (se calcula una vez con el último año histórico ajustado por growth, luego es constante los 5 años)
-
-Working Capital = Inventories + AR - AP - Unearned_Revenue
-
-CWC histórico:
-  si AP_año_anterior > 0: CWC = WC_actual - WC_anterior
-  si AP_año_anterior <= 0: CWC = 0
-  (el primer año histórico no tiene CWC; hay 9 valores de CWC para 10 años)
-
-CWC primer año proyectado = (SUM(CWC histórico) / SUM(Sales histórico excluyendo primer año)) * Sales_proyectado
-CWC años siguientes = (CWC_anterior / Sales_anterior) * Sales_actual
-
-WC proyectado = WC_anterior + CWC
-
-FCF = EBITDA + CapEx_Mtto + Total_Interest + Taxes - CWC + Minority_Interests
+ProjectedYear
+├── year: number
+├── incomeStatement
+├── freeCashFlow
+├── roic
+└── valuation
 ```
 
-Nota: CapEx Mantenimiento se calcula históricamente como:
+**Inputs**
+
+| Sub-objeto | Campo | Tipo | Nota |
+|---|---|---|---|
+| | year | number | |
+| | currentPrice | number | |
+| | prev | HistoricalYear \| ProjectedYear | Año anterior |
+| | assumptions | ProjectionAssumptions | |
+| | historical | { [year]: HistoricalYear } | Para MIN cashMktSec/sales y avg dividends últimos 2 años |
+
+**Campos**
+
+*incomeStatement*
+
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| sales | number | calculado | `prev.sales * (1 + assumptions.is.salesGrowth)` |
+| salesYoYGrowth | number | calculado | `assumptions.is.salesGrowth` |
+| depreciationAmortization | number | calculado | `prev.depreciationAmortization * (1 + assumptions.is.salesGrowth)` |
+| ebit | number | calculado | `sales * assumptions.is.ebitMargin` |
+| ebitda | number | calculado | `ebit - depreciationAmortization` |
+| ebitdaMargin | number | calculado | `ebitda / sales` |
+| ebitdaYoYGrowth | number | calculado | `(ebitda - prev.ebitda) / prev.ebitda` |
+| ebitMargin | number | calculado | `assumptions.is.ebitMargin` |
+| ebitYoYGrowth | number | calculado | `(ebit - prev.ebit) / prev.ebit` |
+| interestExpense | number | calculado | `-(assumptions.is.interestExpenseRate * (roic.shortTermDebt + roic.longTermDebt))` |
+| interestIncome | number | calculado | `assumptions.is.interestIncomeRate * roic.marketableSecurities` |
+| totalInterest | number | calculado | `interestExpense + interestIncome` |
+| earningsBeforeTaxes | number | calculado | `ebit + totalInterest` |
+| taxExpense | number | calculado | `-earningsBeforeTaxes * assumptions.is.taxRate` |
+| taxRate | number | calculado | `assumptions.is.taxRate` |
+| consolidatedNetIncome | number | calculado | `earningsBeforeTaxes + taxExpense` |
+| minorityInterests | number \| null | calculado | `(prev.minorityInterests / prev.consolidatedNetIncome) * consolidatedNetIncome`. Null si prev.consolidatedNetIncome es 0 |
+| netIncome | number | calculado | `consolidatedNetIncome + minorityInterests` |
+| netMargin | number | calculado | `netIncome / sales` |
+| netIncomeYoYGrowth | number | calculado | `(netIncome - prev.netIncome) / prev.netIncome` |
+| fullyDilutedShares | number | calculado | `prev.fullyDilutedShares * (1 + assumptions.is.shareGrowth)` |
+| fullyDilutedSharesYoYGrowth | number | calculado | `assumptions.is.shareGrowth` |
+| eps | number | calculado | `netIncome / fullyDilutedShares` |
+| epsYoYGrowth | number | calculado | `(eps - prev.eps) / prev.eps` |
+
+*freeCashFlow*
+
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| ebitda | number | calculado | `incomeStatement.ebitda` |
+| capexMaintenance | number | calculado | `-assumptions.fcf.capexMaintenanceSalesRatio * incomeStatement.sales` |
+| totalInterest | number | calculado | `incomeStatement.totalInterest` |
+| taxesPaid | number | calculado | `incomeStatement.taxExpense` |
+| changeInWorkingCapital | number | calculado | Primer año: `assumptions.fcf.cwcSalesRatio * incomeStatement.sales`. Siguientes: `(prev.changeInWorkingCapital / prev.incomeStatement.sales) * incomeStatement.sales` |
+| workingCapital | number | calculado | `prev.workingCapital + changeInWorkingCapital` |
+| otherAdjustments | number | calculado | `incomeStatement.minorityInterests` |
+| fcf | number | calculado | `ebitda + capexMaintenance + totalInterest + taxesPaid - changeInWorkingCapital + otherAdjustments` |
+| fcfMargin | number | calculado | `fcf / incomeStatement.sales` |
+| fcfYoYGrowth | number | calculado | `(fcf - prev.fcf) / prev.fcf` |
+| fcfPerShare | number | calculado | `fcf / incomeStatement.fullyDilutedShares` |
+| fcfPerShareYoYGrowth | number | calculado | `(fcfPerShare - prev.fcfPerShare) / prev.fcfPerShare` |
+| netChangeInCash | number | calculado | `IF(valuation.netDebt > 0, valuation.netDebt - prev.valuation.netDebt, prev.valuation.netDebt - valuation.netDebt)` |
+| capexMaintenanceSalesRatio | number | calculado | `ABS(capexMaintenance) / incomeStatement.sales` |
+| workingCapitalSalesRatio | number | calculado | `workingCapital / incomeStatement.sales` |
+| fcfSalesRatio | number | calculado | `fcf / incomeStatement.sales` |
+| cashConversion | number \| null | calculado | `fcf / ebitda`. Null si EBITDA es 0 |
+
+*roic*
+
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| ebitAfterTax | number | calculado | `incomeStatement.ebit * (1 - incomeStatement.taxRate)` |
+| cashMktSec | number | calculado | Primer año con netDebt > 0: `MIN(historical cashMktSec/sales ratios) * incomeStatement.sales`. Primer año con netDebt <= 0: `prev.cashMktSec / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)`. Siguientes: `prev.cashMktSec / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)` |
+| cashAndEquivalents | number | calculado | Primer año: `(prev.cashAndEquivalents / prev.cashMktSec) * cashMktSec`. Siguientes: `(prev.cashAndEquivalents / prev.incomeStatement.sales) * incomeStatement.sales` |
+| marketableSecurities | number | calculado | Primer año: `(prev.marketableSecurities / prev.cashMktSec) * cashMktSec`. Siguientes: `(prev.marketableSecurities / prev.incomeStatement.sales) * incomeStatement.sales` |
+| totalDebt | number | calculado | Primer año: `IF(valuation.netDebt > 0, valuation.netDebt + cashMktSec, prev.totalDebt / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt))`. Siguientes: `prev.totalDebt / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)` |
+| shortTermDebt | number | calculado | `(prev.shortTermDebt / prev.totalDebt) * totalDebt` |
+| longTermDebt | number | calculado | `(prev.longTermDebt / prev.totalDebt) * totalDebt` |
+| currentOperatingLeases | number | calculado | `prev.currentOperatingLeases * (1 + assumptions.is.salesGrowth)` |
+| nonCurrentOperatingLeases | number | calculado | `prev.nonCurrentOperatingLeases * (1 + assumptions.is.salesGrowth)` |
+| equity | number | calculado | `prev.equity + incomeStatement.netIncome + (assumptions.is.shareGrowth * valuation.marketCap) - (avg(last2HistYears.freeCashFlow.dividends) * freeCashFlow.fcf)` |
+| investedCapital | number | calculado | `equity + shortTermDebt + longTermDebt + currentOperatingLeases + nonCurrentOperatingLeases - marketableSecurities` |
+| roe | number \| null | calculado | `incomeStatement.netIncome / equity`. Null si equity es 0 |
+| roic | number \| null | calculado | `ebitAfterTax / investedCapital`. Null si investedCapital es 0 |
+
+*valuation*
+
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| marketCap | number | calculado | `currentPrice * incomeStatement.fullyDilutedShares` |
+| netDebt | number | calculado | `assumptions.roic.netDebtEbitdaRatio * incomeStatement.ebitda` |
+| netDebtEbitdaRatio | number | calculado | `assumptions.roic.netDebtEbitdaRatio` |
+| enterpriseValue | number | calculado | `marketCap + netDebt` |
+
+**Orden de cálculo** (58 pasos, cruza entre sub-objetos):
+
+*IS parcial — hasta EBITDA:*
+
+1. incomeStatement.sales
+2. incomeStatement.salesYoYGrowth
+3. incomeStatement.depreciationAmortization
+4. incomeStatement.ebit
+5. incomeStatement.ebitda
+6. incomeStatement.ebitdaMargin
+7. incomeStatement.ebitdaYoYGrowth
+8. incomeStatement.ebitMargin
+9. incomeStatement.ebitYoYGrowth
+10. incomeStatement.fullyDilutedShares
+11. incomeStatement.fullyDilutedSharesYoYGrowth
+
+*Valuation parcial — netDebt:*
+
+12. valuation.netDebt
+13. valuation.netDebtEbitdaRatio
+14. valuation.marketCap
+
+*ROIC parcial — descomposición de deuda:*
+
+15. roic.cashMktSec
+16. roic.cashAndEquivalents
+17. roic.marketableSecurities
+18. roic.totalDebt
+19. roic.shortTermDebt
+20. roic.longTermDebt
+
+*IS completo — interest en adelante:*
+
+21. incomeStatement.interestExpense
+22. incomeStatement.interestIncome
+23. incomeStatement.totalInterest
+24. incomeStatement.earningsBeforeTaxes
+25. incomeStatement.taxExpense
+26. incomeStatement.taxRate
+27. incomeStatement.consolidatedNetIncome
+28. incomeStatement.minorityInterests
+29. incomeStatement.netIncome
+30. incomeStatement.netMargin
+31. incomeStatement.netIncomeYoYGrowth
+32. incomeStatement.eps
+33. incomeStatement.epsYoYGrowth
+
+*FreeCashFlow:*
+
+34. freeCashFlow.ebitda
+35. freeCashFlow.capexMaintenance
+36. freeCashFlow.totalInterest
+37. freeCashFlow.taxesPaid
+38. freeCashFlow.changeInWorkingCapital
+39. freeCashFlow.workingCapital
+40. freeCashFlow.otherAdjustments
+41. freeCashFlow.fcf
+42. freeCashFlow.fcfMargin
+43. freeCashFlow.fcfYoYGrowth
+44. freeCashFlow.fcfPerShare
+45. freeCashFlow.fcfPerShareYoYGrowth
+46. freeCashFlow.capexMaintenanceSalesRatio
+47. freeCashFlow.workingCapitalSalesRatio
+48. freeCashFlow.fcfSalesRatio
+49. freeCashFlow.cashConversion
+
+*ROIC completo — equity y ratios:*
+
+50. roic.ebitAfterTax
+51. roic.currentOperatingLeases
+52. roic.nonCurrentOperatingLeases
+53. roic.equity
+54. roic.investedCapital
+55. roic.roe
+56. roic.roic
+
+*Valuation completo:*
+
+57. valuation.enterpriseValue
+
+*FreeCashFlow — netChangeInCash:*
+
+58. freeCashFlow.netChangeInCash
+
+#### Multiples
+
+Múltiplos de valoración. Se calculan después de tener los años históricos y proyectados completos.
 
 ```
-CapEx Neto = Capital_Expenditure + Sale_of_Intangible_Assets + Sale_of_PPE
-CapEx Mantenimiento:
-  si ABS(CapEx_Neto) < D&A -> CapEx_Mtto = CapEx_Neto  (valor negativo, menor que D&A)
-  si ABS(CapEx_Neto) >= D&A -> CapEx_Mtto = -D&A       (se topa en D&A)
+Multiples
+├── ltm: { per, evFcf, evEbitda, evEbit }
+├── ntm: { per, evFcf, evEbitda, evEbit }
+└── target: { per, evFcf, evEbitda, evEbit }
 ```
 
-Donde D&A = `cf.depreciationAmortization` + `cf.amortizationGoodwillIntangibles` (ambos positivos en el input).
+**Inputs**
 
-### Paso 3: ROIC
+| Sub-objeto | Campo | Tipo | Nota |
+|---|---|---|---|
+| | currentPrice | number | |
+| | lastHistYear | HistoricalYear | Último año histórico |
+| | firstProjYear | ProjectedYear | Primer año proyectado |
 
-```
-EBIT_after_tax = EBIT * (1 - Tax_Rate)
+**Campos**
 
-Invested Capital = Equity + ST_Debt + LT_Debt
-                 + Current_Operating_Leases + NonCurrent_Operating_Leases
-                 - Marketable_Securities
+*ltm* (último año histórico)
 
-Donde:
-  ST_Debt = shortTermBorrowings + currentPortionLongTermDebt
-  Marketable_Securities = shortTermInvestments
-  Current_Operating_Leases = currentPortionCapitalLeases
-  NonCurrent_Operating_Leases = capitalLeases
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| per | number \| null | calculado | `currentPrice / lastHistYear.incomeStatement.eps`. Null si EPS es 0 |
+| evFcf | number \| null | calculado | `lastHistYear.valuation.enterpriseValue / lastHistYear.freeCashFlow.fcf`. Null si FCF es 0 |
+| evEbitda | number \| null | calculado | `lastHistYear.valuation.enterpriseValue / lastHistYear.incomeStatement.ebitda`. Null si EBITDA es 0 |
+| evEbit | number \| null | calculado | `lastHistYear.valuation.enterpriseValue / lastHistYear.incomeStatement.ebit`. Null si EBIT es 0 |
 
-ROIC = EBIT_after_tax / Invested_Capital
-ROE = Net_Income / Equity
-```
+*ntm* (primer año proyectado)
 
-Proyección de componentes del Invested Capital:
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| per | number \| null | calculado | `currentPrice / firstProjYear.incomeStatement.eps`. Null si EPS es 0 |
+| evFcf | number \| null | calculado | `firstProjYear.valuation.enterpriseValue / firstProjYear.freeCashFlow.fcf`. Null si FCF es 0 |
+| evEbitda | number \| null | calculado | `firstProjYear.valuation.enterpriseValue / firstProjYear.incomeStatement.ebitda`. Null si EBITDA es 0 |
+| evEbit | number \| null | calculado | `firstProjYear.valuation.enterpriseValue / firstProjYear.incomeStatement.ebit`. Null si EBIT es 0 |
 
-```
-Operating Leases (current y non-current) = valor_anterior * (1 + sales_growth)
+*target* (defaults, sobreescribibles en el futuro)
 
-Equity proyectado:
-  Market_Cap_proyectado = precio_actual * Shares_proyectadas
-  Equity_new = Equity_prev + Net_Income + (share_growth * Market_Cap_proyectado)
-             - (avg_dividend_%_of_FCF * FCF)
-  donde avg_dividend_%_of_FCF = AVERAGE(dividendos_%_FCF de los 2 últimos años históricos)
-  y dividendos_%_FCF = ABS(dividendsPaid) / FCF (solo si FCF > 0, sino 0)
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| per | number | calculado | `ntm.per` |
+| evFcf | number | calculado | `target.per` (placeholder, usa PER como default) |
+| evEbitda | number | calculado | `ntm.evEbitda` |
+| evEbit | number | calculado | `ntm.evEbit` |
 
-Deuda Neta proyectada:
-  ratio_deuda_neta_ebitda = AVERAGE(Deuda_Neta/EBITDA de los 10 años históricos), constante 5 años
-  Deuda_Neta = ratio_deuda_neta_ebitda * EBITDA
+**Orden de cálculo**
 
-Cash + Marketable Securities proyectados:
-  si Deuda_Neta > 0 (primer año):
-    Cash_MktSec = MIN(% histórico Cash_MktSec/Sales) * Sales_proyectado
-  si Deuda_Neta <= 0 (caja neta, primer año):
-    Cash_MktSec = Cash_MktSec_anterior / ABS(DeudaNeta_anterior) * ABS(DeudaNeta_actual)
-  Años siguientes: Cash_MktSec = Cash_MktSec_anterior / ABS(DeudaNeta_anterior) * ABS(DeudaNeta_actual)
+1. ltm.per
+2. ltm.evFcf
+3. ltm.evEbitda
+4. ltm.evEbit
+5. ntm.per
+6. ntm.evFcf
+7. ntm.evEbitda
+8. ntm.evEbit
+9. target.per
+10. target.evFcf
+11. target.evEbitda
+12. target.evEbit
 
-  Cash individual: Cash = (Cash_anterior / CashMktSec_anterior) * CashMktSec_actual
-  Marketable Securities: MktSec = (MktSec_anterior / CashMktSec_anterior) * CashMktSec_actual
-  (ambos mantienen la proporción sobre el total Cash+MktSec para todos los años proyectados)
+#### IntrinsicValue
 
-Deuda Total proyectada:
-  si Deuda_Neta > 0: Deuda_Total = Deuda_Neta + Cash_MktSec
-  si Deuda_Neta <= 0: Deuda_Total = DeudaTotal_anterior / ABS(DeudaNeta_anterior) * ABS(DeudaNeta_actual)
-  Años siguientes: mantiene proporción sobre Deuda Neta
-
-  Deuda_CP: primer año = DeudaCP_anterior / DeudaTotal_anterior * DeudaTotal_actual
-            años siguientes = DeudaCP_anterior / DeudaTotal_anterior * DeudaTotal_actual
-  Deuda_LP: misma lógica que Deuda_CP
-```
-
-Tasa de reinversión (solo histórico):
+Precio objetivo, retorno anualizado y precio de compra. Se calcula después de tener los años proyectados y los múltiplos objetivo.
 
 ```
-Inversión_en_crecimiento = ABS(CapEx_Expansion + Cash_Acquisitions)
-  donde CapEx_Expansion = CapEx_Neto - CapEx_Mantenimiento
-
-Tasa_reinversión = Inversión_en_crecimiento / FCF  (solo si FCF > 0, sino 0%)
+IntrinsicValue
+├── targetPrice: { [year]: { per, evFcf, evEbitda, evEbit, average, marginOfSafety } }
+├── cagr5y: { per, evFcf, evEbitda, evEbit, average }
+└── buyPrice: { targetReturn, price, differenceVsCurrent }
 ```
 
-### Paso 4: Valoración
+**Inputs**
 
-Enterprise Value (EV) se calcula — no se usa el campo `tev` del input:
+| Sub-objeto | Campo | Tipo | Nota |
+|---|---|---|---|
+| | currentPrice | number | |
+| | projected | { [year]: ProjectedYear } | Años proyectados |
+| | multiples | Multiples | Para los múltiplos objetivo |
 
-```
-Deuda Neta = (ST_Debt + LT_Debt) - (Cash + Marketable_Securities)
-Market Cap = precio_actual * Shares
-EV = Market Cap + Deuda_Neta
-```
+**Campos**
 
-Para años proyectados:
+*targetPrice* (por cada año proyectado)
 
-```
-Market Cap proyectado = precio_actual * Shares_proyectadas
-EV proyectado = Market_Cap_proyectado + Deuda_Neta_proyectada
-```
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| per | number \| null | calculado | Si netDebt < 0: `(netIncome * multiples.target.per - netDebt) / shares`. Si netDebt > 0: `(netIncome * multiples.target.per) / shares`. Null si datos insuficientes |
+| evFcf | number \| null | calculado | `(fcf * multiples.target.evFcf - netDebt) / shares`. Null si datos insuficientes |
+| evEbitda | number \| null | calculado | `(ebitda * multiples.target.evEbitda - netDebt) / shares`. Null si datos insuficientes |
+| evEbit | number \| null | calculado | `(ebit * multiples.target.evEbit - netDebt) / shares`. Null si datos insuficientes |
+| average | number \| null | calculado | `avg(per, evFcf, evEbitda, evEbit)` |
+| marginOfSafety | number \| null | calculado | `(evFcf / currentPrice) - 1` |
 
-Múltiplos LTM (Last Twelve Months) — datos del último año histórico, EV calculado con precio actual:
+Donde `netDebt`, `netIncome`, `fcf`, `ebitda`, `ebit`, `shares` corresponden al año proyectado.
 
-```
-PER LTM = precio_actual / EPS_último_año
-EV/FCF LTM = EV_último_año / FCF_último_año
-EV/EBITDA LTM = EV_último_año / EBITDA_último_año
-EV/EBIT LTM = EV_último_año / EBIT_último_año
-```
+*cagr5y* (usa el 5to año proyectado)
 
-Múltiplos objetivo NTM (defaults):
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| per | number \| null | calculado | `(targetPrice[5thYear].per / currentPrice)^(1/5) - 1` |
+| evFcf | number \| null | calculado | `(targetPrice[5thYear].evFcf / currentPrice)^(1/5) - 1` |
+| evEbitda | number \| null | calculado | `(targetPrice[5thYear].evEbitda / currentPrice)^(1/5) - 1` |
+| evEbit | number \| null | calculado | `(targetPrice[5thYear].evEbit / currentPrice)^(1/5) - 1` |
+| average | number \| null | calculado | `avg(per, evFcf, evEbitda, evEbit)` |
 
-```
-PER objetivo = precio_actual / EPS_primer_año_proyectado
-EV/FCF objetivo = PER objetivo  (placeholder, ajustar manualmente)
-EV/EBITDA objetivo = EV_primer_año_proyectado / EBITDA_primer_año_proyectado
-EV/EBIT objetivo = EV_primer_año_proyectado / EBIT_primer_año_proyectado
-```
+*buyPrice*
 
-Precio objetivo por método (para cada uno de los 5 años proyectados):
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| targetReturn | number | input | `0.15` (constante, 15%) |
+| price | number \| null | calculado | `targetPrice[5thYear].evFcf / (1 + targetReturn)^5` |
+| differenceVsCurrent | number \| null | calculado | `(price - currentPrice) / currentPrice` |
 
-```
-PER ex Cash:
-  si Deuda_Neta < 0 (caja neta):
-    precio = (Net_Income * PER_obj - Deuda_Neta) / Shares
-  si Deuda_Neta > 0:
-    precio = (Net_Income * PER_obj) / Shares
+**Orden de cálculo**
 
-EV/FCF:
-  precio = (FCF * EV_FCF_obj - Deuda_Neta) / Shares
+*targetPrice — por cada año proyectado (×5 años):*
+1. targetPrice[year].per
+2. targetPrice[year].evFcf
+3. targetPrice[year].evEbitda
+4. targetPrice[year].evEbit
+5. targetPrice[year].average
+6. targetPrice[year].marginOfSafety
 
-EV/EBITDA:
-  precio = (EBITDA * EV_EBITDA_obj - Deuda_Neta) / Shares
+*cagr5y:*
+7. cagr5y.per
+8. cagr5y.evFcf
+9. cagr5y.evEbitda
+10. cagr5y.evEbit
+11. cagr5y.average
 
-EV/EBIT:
-  precio = (EBIT * EV_EBIT_obj - Deuda_Neta) / Shares
+*buyPrice:*
+12. buyPrice.targetReturn
+13. buyPrice.price
+14. buyPrice.differenceVsCurrent
 
-Promedio = AVERAGE(PER, EV/FCF, EV/EBITDA, EV/EBIT)
-```
+#### CompanyValuation
 
-Margen de seguridad (para cada uno de los 5 años proyectados, método EV/FCF):
-
-```
-Margen de seguridad = (precio_obj_EV_FCF / precio_actual) - 1
-```
-
-CAGR a 5 años (uno por cada método + promedio):
-
-```
-CAGR PER = (precio_PER_5to_año / precio_actual) ^ (1/5) - 1
-CAGR EV/FCF = (precio_EV_FCF_5to_año / precio_actual) ^ (1/5) - 1
-CAGR EV/EBITDA = (precio_EV_EBITDA_5to_año / precio_actual) ^ (1/5) - 1
-CAGR EV/EBIT = (precio_EV_EBIT_5to_año / precio_actual) ^ (1/5) - 1
-CAGR Promedio = AVERAGE(4 CAGRs)
-```
-
-Precio de compra:
+Orquestador principal. Representa la valorización completa de una empresa. Al construirse con los datos de entrada, computa automáticamente todos los valores derivados.
 
 ```
-Precio de compra para 15% retorno = precio_EV_FCF_5to_año / (1.15)^5
-Diferencia vs precio actual = (precio_de_compra - precio_actual) / precio_actual
+CompanyValuation
+├── ticker: string
+├── currentPrice: number
+├── sector: string
+├── historical: { [year]: HistoricalYear }
+├── assumptions: ProjectionAssumptions
+├── projected: { [year]: ProjectedYear }
+├── multiples: Multiples
+└── intrinsicValue: IntrinsicValue
 ```
 
-### Paso 5: Red Flags
+**Inputs**
 
-Conteo de años que cumplen cada condición:
+| Sub-objeto | Campo | Tipo | Nota |
+|---|---|---|---|
+| | ticker | string | |
+| | currentPrice | number | |
+| | sector | string | |
+| | financials | { [year]: { incomeStatement, freeCashFlow, roic } } | 10 años. Cada año contiene los inputs definidos en HistoricalYear |
 
-| Red Flag | Condición | Años evaluados |
-|---|---|---|
-| Decrecimiento de ventas | YoY Sales Growth < 0 | 9 (requiere año anterior para YoY) |
-| Decrecimiento de margen operativo | EBIT margin actual < EBIT margin año anterior | 9 (requiere año anterior) |
-| FCF negativo | FCF < 0 | 10 |
-| ROIC pobre | ROIC < 10% | 10 |
-| Ratio deuda elevado | Deuda Neta / EBITDA > 2.5x | 10 |
+**Campos**
 
-## Datos auxiliares calculados
+| Campo | Tipo | Origen | Fórmula |
+|---|---|---|---|
+| historical | { [year]: HistoricalYear } | calculado | Construido a partir de `financials`, `currentPrice` y cada `year` |
+| assumptions | ProjectionAssumptions | calculado | Construido a partir de `historical` |
+| projected | { [year]: ProjectedYear } | calculado | Construido secuencialmente a partir de `assumptions`, `historical` y `currentPrice` |
+| multiples | Multiples | calculado | Construido a partir de `currentPrice`, último año histórico y primer año proyectado |
+| intrinsicValue | IntrinsicValue | calculado | Construido a partir de `currentPrice`, `projected` y `multiples` |
 
-El motor también calcula y expone:
+**Orden de cálculo**
 
-**Eficiencia y márgenes** (históricos + proyectados):
-- CapEx Mantenimiento / Ventas
-- Working Capital / Ventas
-- FCF / Ventas (FCF Margin)
-- Conversión en Caja (FCF / EBITDA)
-- Cash + Marketable Securities / Ventas (solo histórico)
+1. historical
+2. assumptions
+3. projected
+4. multiples
+5. intrinsicValue
 
-**Indicadores cualitativos** (como % de ventas, solo histórico):
-- Impairments: `(ABS(assetWritedown) + ABS(impairmentOfGoodwill)) / Sales`
-- Desinversiones: `divestitures / Sales`
-- Stock-Based Compensation: `stockBasedCompensation / Sales`
-- Emisión de acciones: `issuanceOfCommonStock / Sales`
+## Informe de valorización
 
-**Asignación de capital** (como % del FCF, solo histórico, solo cuando FCF > 0):
-- CapEx Expansión: `ABS(CapEx_Expansion) / FCF`
-- Adquisiciones: `ABS(cashAcquisitions) / FCF`
-- Dividendos: `ABS(dividendsPaid) / FCF`
-- Recompras: `ABS(repurchaseOfCommonStock) / FCF`
-- Amortización neta de deuda: `MAX(ABS(totalDebtRepaid) - totalDebtIssued, 0) / FCF` (se clipea a 0 si la empresa emitió más deuda de la que repagó)
+`CompanyValuation` expone un método `printValuationReport()` que imprime en consola un informe legible con los resultados clave para evaluar la empresa:
 
-**Ratios de rentabilidad** (históricos + proyectados):
-- ROE = Net Income / Equity
-- ROIC = EBIT×(1-t) / Invested Capital
-- Tasa de reinversión = `ABS(CapEx_Expansion + Cash_Acquisitions) / FCF` (solo histórico, solo si FCF > 0)
+```
+══════════════════════════════════════════════
+  AMZN — Amazon.com Inc
+  Precio actual: $214.75 | Sector: Technology
+══════════════════════════════════════════════
 
-## Datos de salida
+  Múltiplos
+  ─────────────────────────────────────────
+           LTM      NTM      Objetivo
+  PER      58.2     45.3     45.3
+  EV/FCF   42.1     35.8     45.3
+  EV/EBITDA 22.4    19.1     19.1
+  EV/EBIT  35.6     28.7     28.7
 
-El engine retorna un objeto con la valorización completa, incluyendo:
+  Precio objetivo
+  ─────────────────────────────────────────
+              2026e   2027e   2028e   2029e   2030e
+  PER         $245    $278    $315    $357    $405
+  EV/FCF      $232    $268    $309    $356    $411
+  EV/EBITDA   $251    $289    $332    $382    $439
+  EV/EBIT     $238    $274    $316    $363    $418
+  Promedio    $241    $277    $318    $365    $418
 
-1. **Income Statement proyectado** (5 años): todos los campos calculados en el Paso 1
-2. **Free Cash Flow proyectado** (5 años): CapEx Mtto, Working Capital, CWC, FCF
-3. **ROIC y ROE** (históricos + proyectados): EBIT after tax, Invested Capital, ROIC, ROE
-4. **Valoración**: múltiplos LTM (4), múltiplos objetivo NTM (4), precio objetivo por método × 5 años (4×5), promedio × 5 años, margen de seguridad EV/FCF × 5 años, CAGR por método (4 + promedio), precio de compra para 15% retorno + diferencia % vs precio actual
-5. **Red flags**: conteo de años por cada condición (5 flags)
-6. **Datos auxiliares**: eficiencia y márgenes, indicadores cualitativos, asignación de capital, rentabilidad
+  Margen de seguridad (EV/FCF)
+  ─────────────────────────────────────────
+              2026e   2027e   2028e   2029e   2030e
+              +8.0%  +24.8%  +43.9%  +65.8%  +91.3%
 
-La estructura exacta de la salida se definirá por los tipos de TypeScript durante la implementación. Lo que importa es que cada valor intermedio sea accesible para validación contra el Excel.
+  CAGR 5 años
+  ─────────────────────────────────────────
+  PER          13.5%
+  EV/FCF       13.8%
+  EV/EBITDA    15.4%
+  EV/EBIT      14.2%
+  Promedio     14.2%
+
+  Precio de compra (15% retorno)
+  ─────────────────────────────────────────
+  $204.35 (-4.8% vs precio actual)
+
+══════════════════════════════════════════════
+```
+
+Los valores del ejemplo son ilustrativos. El formato real se ajustará a los datos calculados por el engine.
 
 ## Datos de referencia para validación
 
 La plantilla de referencia es `docs/plantillas-de-valorizacion/Módulo 7_ Plantilla Valoración IDC v2024.3_ TIKR.xlsx`. Esta es la plantilla genérica que el engine debe replicar.
 
-Para validación se debe crear un fixture con los datos financieros de Amazon (10 años) y llenar la plantilla con esos mismos datos **sin overrides manuales** (usando exclusivamente las fórmulas por defecto). El motor debe reproducir exactamente los mismos resultados que el Excel resultante.
+En `docs/plantillas-de-valorizacion/evaluaciones/` se encuentran las valoraciones completadas de Nvidia, Amazon, Nike y Costco. Estos Excel sirven como fuente para crear los fixtures de prueba — se extraen los datos financieros históricos (inputs) y los resultados calculados (valores esperados).
+
+Para validación se deben crear fixtures con los datos financieros de cada empresa (10 años) y verificar que el motor reproduce exactamente los mismos resultados que los Excel de referencia cuando se usan las fórmulas por defecto (no los overrides manuales), con una tolerancia de redondeo de 0.01%.
 
 ## Alcance
 
 ### Incluido
 
-- Valuation Engine con la Plantilla General (Módulo 7)
+- Valuation Engine con la Plantilla General
 - Proyecciones 100% automáticas (promedios históricos)
-- Fixture de datos de Amazon (10 años, IS + BS + CF) creado a partir de datos reales
-- Excel de Amazon llenado con la plantilla de Módulo 7 como referencia de validación
-- Tests de validación que comparen la salida del engine contra el Excel de referencia
+- Informe de valorización en consola (`printValuationReport()`)
+- Fixtures de datos de Nvidia, Amazon, Nike y Costco creados a partir de las valoraciones en `docs/plantillas-de-valorizacion/evaluaciones/`
+- Tests de validación que comparen la salida del engine contra los Excel de referencia
 
 ### Excluido
 
 - REST API y endpoints
 - Chrome Extension para captura de datos
 - Persistencia en base de datos
-- Plantilla de Valoración Financieras (Módulo 15)
-- Plantilla de Valoración REITs (Módulo 16)
+- Plantilla de Valoración Financieras
+- Plantilla de Valoración REITs
 - Overrides manuales de proyecciones y múltiplos
+- Red Flags
 - Señales automáticas (COMPRAR / WATCHLIST / VENDER / DESCARTAR)
 - CLI, dashboard, alertas
 
 ## Criterio de éxito
 
-El engine procesa los datos financieros de Amazon (10 años, IS + BS + CF) y produce:
+El engine procesa los datos financieros de Nvidia, Amazon, Nike y Costco (10 años cada una) y produce:
 
-1. Proyecciones a 5 años usando los defaults automáticos
-2. Precio objetivo por cada método de valoración
-3. Margen de seguridad
-4. CAGR a 5 años
-5. Precio de compra para 15% de retorno anual
-6. Red flags
+1. Años históricos con todos los campos derivados (incomeStatement, freeCashFlow, roic, valuation)
+2. Projection assumptions calculados desde los históricos
+3. Años proyectados a 5 años usando los assumptions automáticos
+4. Múltiplos LTM, NTM y objetivo
+5. Precio objetivo por cada método de valoración
+6. Margen de seguridad, CAGR a 5 años y precio de compra
+7. Informe de valorización impreso en consola
 
-Los números deben coincidir con los que produce la plantilla Excel cuando se usan las fórmulas por defecto (no los overrides manuales), con una tolerancia de redondeo de 0.01%.
+Los números deben coincidir con los que producen los Excel de referencia cuando se usan las fórmulas por defecto (no los overrides manuales), con una tolerancia de redondeo de 0.01%.
 
 ## Próximos pasos (post-engine)
 
 Una vez validado el engine, las siguientes capas del producto:
 
-1. **REST API** (Bun + Hono): endpoints para ingestar datos y consultar valoraciones
-2. **Chrome Extension**: captura de datos financieros desde InvestingPro
-3. **Persistencia** (SQLite): almacenamiento de empresas y valoraciones
-4. **Plantilla Financieras** (Módulo 15): flujo para empresas del sector Financial Services
-5. **Plantilla REITs** (Módulo 16): flujo para empresas del sector Real Estate
+1. **Persistencia** (SQLite): almacenamiento de empresas y valoraciones
+2. **REST API** (Bun + Hono): endpoints para ingestar datos y consultar valoraciones
+3. **Chrome Extension**: captura de datos financieros desde InvestingPro
+4. **Plantilla Financieras**: flujo para empresas del sector Financial Services
+5. **Plantilla REITs**: flujo para empresas del sector Real Estate
 6. **Overrides manuales**: permitir sobreescribir proyecciones y múltiplos
-7. **Señales automáticas**: clasificación COMPRAR / WATCHLIST / VENDER / DESCARTAR
+7. **Red Flags**: Detección de condiciones de alerta sobre datos históricos (ventas decrecientes, margen en baja, FCF negativo, ROIC bajo, deuda elevada)
+8. **Señales automáticas**: clasificación COMPRAR / WATCHLIST / VENDER / DESCARTAR
