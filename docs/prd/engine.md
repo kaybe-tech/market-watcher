@@ -127,8 +127,8 @@ HistoricalYear
 | capitalExpenditure | number | input | |
 | saleOfIntangibleAssets | number | input | |
 | saleOfPPE | number | input | |
-| capexNeto | number | calculado | `capitalExpenditure + saleOfIntangibleAssets + saleOfPPE` |
-| capexMaintenance | number | calculado | `IF(ABS(capexNeto) < ABS(is.depreciationAmortization), capexNeto, is.depreciationAmortization)` |
+| netCapex | number | calculado | `capitalExpenditure + saleOfIntangibleAssets + saleOfPPE` |
+| capexMaintenance | number | calculado | `IF(ABS(netCapex) < ABS(incomeStatement.depreciationAmortization), netCapex, incomeStatement.depreciationAmortization)` |
 | totalInterest | number | calculado | `incomeStatement.totalInterest` |
 | taxesPaid | number | calculado | `incomeStatement.taxExpense` |
 | inventories | number | input | |
@@ -153,12 +153,12 @@ HistoricalYear
 | repurchaseOfCommonStock | number | input | |
 | totalDebtRepaid | number | input | |
 | totalDebtIssued | number | input | |
-| capexExpansion | number \| null | calculado | `ABS(capexNeto - capexMaintenance) / fcf`. Null si FCF <= 0 |
+| capexExpansion | number \| null | calculado | `ABS(netCapex - capexMaintenance) / fcf`. Null si FCF <= 0 |
 | acquisitions | number \| null | calculado | `ABS(cashAcquisitions) / fcf`. Null si FCF <= 0 |
-| dividends | number \| null | calculado | `ABS(dividendsPaid) / fcf`. Null si FCF <= 0 |
+| dividendsFcfRatio | number \| null | calculado | `ABS(dividendsPaid) / fcf`. Null si FCF <= 0 |
 | buybacks | number \| null | calculado | `ABS(repurchaseOfCommonStock) / fcf`. Null si FCF <= 0 |
 | netDebtRepayment | number \| null | calculado | `MAX(ABS(totalDebtRepaid) - totalDebtIssued, 0) / fcf`. Null si FCF <= 0 |
-| totalCapitalAllocation | number \| null | calculado | `capexExpansion + acquisitions + dividends + buybacks + netDebtRepayment`. Null si FCF <= 0 |
+| totalCapitalAllocation | number \| null | calculado | `capexExpansion + acquisitions + dividendsFcfRatio + buybacks + netDebtRepayment`. Null si FCF <= 0 |
 
 *roic*
 
@@ -169,13 +169,14 @@ HistoricalYear
 | marketableSecurities | number | input | |
 | shortTermDebt | number | input | |
 | longTermDebt | number | input | |
+| totalDebt | number | calculado | `shortTermDebt + longTermDebt` |
 | currentOperatingLeases | number | input | |
 | nonCurrentOperatingLeases | number | input | |
 | equity | number | input | |
 | investedCapital | number | calculado | `equity + shortTermDebt + longTermDebt + currentOperatingLeases + nonCurrentOperatingLeases - marketableSecurities` |
 | roe | number \| null | calculado | `incomeStatement.netIncome / equity`. Null si equity es 0 |
 | roic | number \| null | calculado | `ebitAfterTax / investedCapital`. Null si investedCapital es 0 |
-| reinvestmentRate | number \| null | calculado | `ABS(freeCashFlow.capexNeto - freeCashFlow.capexMaintenance + freeCashFlow.cashAcquisitions) / freeCashFlow.fcf`. Null si FCF <= 0 |
+| reinvestmentRate | number \| null | calculado | `ABS(freeCashFlow.netCapex - freeCashFlow.capexMaintenance + freeCashFlow.cashAcquisitions) / freeCashFlow.fcf`. Null si FCF <= 0 |
 
 *valuation*
 
@@ -212,7 +213,7 @@ Cada campo solo puede calcularse después de que todas sus dependencias estén d
 *freeCashFlow* (23 campos calculados):
 
 17. ebitda
-18. capexNeto
+18. netCapex
 19. capexMaintenance
 20. totalInterest
 21. taxesPaid
@@ -230,25 +231,26 @@ Cada campo solo puede calcularse después de que todas sus dependencias estén d
 33. cashConversion
 34. capexExpansion
 35. acquisitions
-36. dividends
+36. dividendsFcfRatio
 37. buybacks
 38. netDebtRepayment
 39. totalCapitalAllocation
 
-*roic* (5 campos calculados):
+*roic* (6 campos calculados):
 
 40. ebitAfterTax
-41. investedCapital
-42. roe
-43. roic
-44. reinvestmentRate
+41. totalDebt
+42. investedCapital
+43. roe
+44. roic
+45. reinvestmentRate
 
 *valuation* (4 campos calculados):
 
-45. marketCap
-46. netDebt
-47. netDebtEbitdaRatio
-48. enterpriseValue
+46. marketCap
+47. netDebt
+48. netDebtEbitdaRatio
+49. enterpriseValue
 
 #### ProjectionAssumptions
 
@@ -284,7 +286,7 @@ ProjectionAssumptions
 
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
-| capexMaintenanceSalesRatio | number | calculado | `(lastHistCapexMaintenance * (1 + salesGrowth)) / (lastHistSales * salesGrowth)` |
+| capexMaintenanceSalesRatio | number | calculado | `ABS(historical[lastYear].freeCashFlow.capexMaintenance * (1 + incomeStatement.salesGrowth)) / (historical[lastYear].incomeStatement.sales * (1 + incomeStatement.salesGrowth))` |
 | cwcSalesRatio | number | calculado | `sum(changeInWorkingCapital) / sum(sales excluyendo primer año)` de los 9 años |
 
 *roic*
@@ -334,7 +336,7 @@ ProjectedYear
 | | currentPrice | number | |
 | | prev | HistoricalYear \| ProjectedYear | Año anterior |
 | | assumptions | ProjectionAssumptions | |
-| | historical | { [year]: HistoricalYear } | Para MIN cashMktSec/sales y avg dividends últimos 2 años |
+| | historical | { [year]: HistoricalYear } | Para MIN cashMktSec/sales y avg dividendsFcfRatio últimos 2 años |
 
 **Campos**
 
@@ -342,28 +344,28 @@ ProjectedYear
 
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
-| sales | number | calculado | `prev.sales * (1 + assumptions.is.salesGrowth)` |
-| salesYoYGrowth | number | calculado | `assumptions.is.salesGrowth` |
-| depreciationAmortization | number | calculado | `prev.depreciationAmortization * (1 + assumptions.is.salesGrowth)` |
-| ebit | number | calculado | `sales * assumptions.is.ebitMargin` |
+| sales | number | calculado | `prev.sales * (1 + assumptions.incomeStatement.salesGrowth)` |
+| salesYoYGrowth | number | calculado | `assumptions.incomeStatement.salesGrowth` |
+| depreciationAmortization | number | calculado | `prev.depreciationAmortization * (1 + assumptions.incomeStatement.salesGrowth)` |
+| ebit | number | calculado | `sales * assumptions.incomeStatement.ebitMargin` |
 | ebitda | number | calculado | `ebit - depreciationAmortization` |
 | ebitdaMargin | number | calculado | `ebitda / sales` |
 | ebitdaYoYGrowth | number | calculado | `(ebitda - prev.ebitda) / prev.ebitda` |
-| ebitMargin | number | calculado | `assumptions.is.ebitMargin` |
+| ebitMargin | number | calculado | `assumptions.incomeStatement.ebitMargin` |
 | ebitYoYGrowth | number | calculado | `(ebit - prev.ebit) / prev.ebit` |
-| interestExpense | number | calculado | `-(assumptions.is.interestExpenseRate * (roic.shortTermDebt + roic.longTermDebt))` |
-| interestIncome | number | calculado | `assumptions.is.interestIncomeRate * roic.marketableSecurities` |
+| interestExpense | number | calculado | `-(assumptions.incomeStatement.interestExpenseRate * (roic.shortTermDebt + roic.longTermDebt))` |
+| interestIncome | number | calculado | `assumptions.incomeStatement.interestIncomeRate * roic.marketableSecurities` |
 | totalInterest | number | calculado | `interestExpense + interestIncome` |
 | earningsBeforeTaxes | number | calculado | `ebit + totalInterest` |
-| taxExpense | number | calculado | `-earningsBeforeTaxes * assumptions.is.taxRate` |
-| taxRate | number | calculado | `assumptions.is.taxRate` |
+| taxExpense | number | calculado | `-earningsBeforeTaxes * assumptions.incomeStatement.taxRate` |
+| taxRate | number | calculado | `assumptions.incomeStatement.taxRate` |
 | consolidatedNetIncome | number | calculado | `earningsBeforeTaxes + taxExpense` |
 | minorityInterests | number \| null | calculado | `(prev.minorityInterests / prev.consolidatedNetIncome) * consolidatedNetIncome`. Null si prev.consolidatedNetIncome es 0 |
 | netIncome | number | calculado | `consolidatedNetIncome + minorityInterests` |
 | netMargin | number | calculado | `netIncome / sales` |
 | netIncomeYoYGrowth | number | calculado | `(netIncome - prev.netIncome) / prev.netIncome` |
-| fullyDilutedShares | number | calculado | `prev.fullyDilutedShares * (1 + assumptions.is.shareGrowth)` |
-| fullyDilutedSharesYoYGrowth | number | calculado | `assumptions.is.shareGrowth` |
+| fullyDilutedShares | number | calculado | `prev.fullyDilutedShares * (1 + assumptions.incomeStatement.shareGrowth)` |
+| fullyDilutedSharesYoYGrowth | number | calculado | `assumptions.incomeStatement.shareGrowth` |
 | eps | number | calculado | `netIncome / fullyDilutedShares` |
 | epsYoYGrowth | number | calculado | `(eps - prev.eps) / prev.eps` |
 
@@ -372,10 +374,10 @@ ProjectedYear
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
 | ebitda | number | calculado | `incomeStatement.ebitda` |
-| capexMaintenance | number | calculado | `-assumptions.fcf.capexMaintenanceSalesRatio * incomeStatement.sales` |
+| capexMaintenance | number | calculado | `-assumptions.freeCashFlow.capexMaintenanceSalesRatio * incomeStatement.sales` |
 | totalInterest | number | calculado | `incomeStatement.totalInterest` |
 | taxesPaid | number | calculado | `incomeStatement.taxExpense` |
-| changeInWorkingCapital | number | calculado | Primer año: `assumptions.fcf.cwcSalesRatio * incomeStatement.sales`. Siguientes: `(prev.changeInWorkingCapital / prev.incomeStatement.sales) * incomeStatement.sales` |
+| changeInWorkingCapital | number | calculado | Primer año: `assumptions.freeCashFlow.cwcSalesRatio * incomeStatement.sales`. Siguientes: `(prev.changeInWorkingCapital / prev.incomeStatement.sales) * incomeStatement.sales` |
 | workingCapital | number | calculado | `prev.workingCapital + changeInWorkingCapital` |
 | otherAdjustments | number | calculado | `incomeStatement.minorityInterests` |
 | fcf | number | calculado | `ebitda + capexMaintenance + totalInterest + taxesPaid - changeInWorkingCapital + otherAdjustments` |
@@ -394,15 +396,15 @@ ProjectedYear
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
 | ebitAfterTax | number | calculado | `incomeStatement.ebit * (1 - incomeStatement.taxRate)` |
-| cashMktSec | number | calculado | Primer año con netDebt > 0: `MIN(historical cashMktSec/sales ratios) * incomeStatement.sales`. Primer año con netDebt <= 0: `prev.cashMktSec / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)`. Siguientes: `prev.cashMktSec / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)` |
-| cashAndEquivalents | number | calculado | Primer año: `(prev.cashAndEquivalents / prev.cashMktSec) * cashMktSec`. Siguientes: `(prev.cashAndEquivalents / prev.incomeStatement.sales) * incomeStatement.sales` |
-| marketableSecurities | number | calculado | Primer año: `(prev.marketableSecurities / prev.cashMktSec) * cashMktSec`. Siguientes: `(prev.marketableSecurities / prev.incomeStatement.sales) * incomeStatement.sales` |
+| cashMktSec | number | calculado | Primer año con netDebt > 0: `MIN((historicalYear.cashAndEquivalents + historicalYear.marketableSecurities) / historicalYear.incomeStatement.sales)` calculado para cada año histórico, multiplicado por `incomeStatement.sales`. Primer año con netDebt <= 0 (prev es HistoricalYear): `(prev.cashAndEquivalents + prev.marketableSecurities) / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)`. Siguientes (prev es ProjectedYear): `prev.cashMktSec / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)` |
+| cashAndEquivalents | number | calculado | Primer año (prev es HistoricalYear): `(prev.cashAndEquivalents / (prev.cashAndEquivalents + prev.marketableSecurities)) * cashMktSec`. Siguientes (prev es ProjectedYear): `(prev.cashAndEquivalents / prev.incomeStatement.sales) * incomeStatement.sales` |
+| marketableSecurities | number | calculado | Primer año (prev es HistoricalYear): `(prev.marketableSecurities / (prev.cashAndEquivalents + prev.marketableSecurities)) * cashMktSec`. Siguientes (prev es ProjectedYear): `(prev.marketableSecurities / prev.incomeStatement.sales) * incomeStatement.sales` |
 | totalDebt | number | calculado | Primer año: `IF(valuation.netDebt > 0, valuation.netDebt + cashMktSec, prev.totalDebt / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt))`. Siguientes: `prev.totalDebt / ABS(prev.valuation.netDebt) * ABS(valuation.netDebt)` |
 | shortTermDebt | number | calculado | `(prev.shortTermDebt / prev.totalDebt) * totalDebt` |
 | longTermDebt | number | calculado | `(prev.longTermDebt / prev.totalDebt) * totalDebt` |
-| currentOperatingLeases | number | calculado | `prev.currentOperatingLeases * (1 + assumptions.is.salesGrowth)` |
-| nonCurrentOperatingLeases | number | calculado | `prev.nonCurrentOperatingLeases * (1 + assumptions.is.salesGrowth)` |
-| equity | number | calculado | `prev.equity + incomeStatement.netIncome + (assumptions.is.shareGrowth * valuation.marketCap) - (avg(last2HistYears.freeCashFlow.dividends) * freeCashFlow.fcf)` |
+| currentOperatingLeases | number | calculado | `prev.currentOperatingLeases * (1 + assumptions.incomeStatement.salesGrowth)` |
+| nonCurrentOperatingLeases | number | calculado | `prev.nonCurrentOperatingLeases * (1 + assumptions.incomeStatement.salesGrowth)` |
+| equity | number | calculado | `prev.equity + incomeStatement.netIncome + (assumptions.incomeStatement.shareGrowth * valuation.marketCap) - (avg(last2HistYears.freeCashFlow.dividendsFcfRatio) * freeCashFlow.fcf)` |
 | investedCapital | number | calculado | `equity + shortTermDebt + longTermDebt + currentOperatingLeases + nonCurrentOperatingLeases - marketableSecurities` |
 | roe | number \| null | calculado | `incomeStatement.netIncome / equity`. Null si equity es 0 |
 | roic | number \| null | calculado | `ebitAfterTax / investedCapital`. Null si investedCapital es 0 |
@@ -588,14 +590,14 @@ IntrinsicValue
 
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
-| per | number \| null | calculado | Si netDebt < 0: `(netIncome * multiples.target.per - netDebt) / shares`. Si netDebt > 0: `(netIncome * multiples.target.per) / shares`. Null si datos insuficientes |
-| evFcf | number \| null | calculado | `(fcf * multiples.target.evFcf - netDebt) / shares`. Null si datos insuficientes |
-| evEbitda | number \| null | calculado | `(ebitda * multiples.target.evEbitda - netDebt) / shares`. Null si datos insuficientes |
-| evEbit | number \| null | calculado | `(ebit * multiples.target.evEbit - netDebt) / shares`. Null si datos insuficientes |
+| per | number \| null | calculado | Si netDebt < 0: `(netIncome * multiples.target.per - netDebt) / fullyDilutedShares`. Si netDebt > 0: `(netIncome * multiples.target.per) / fullyDilutedShares`. Null si datos insuficientes |
+| evFcf | number \| null | calculado | `(fcf * multiples.target.evFcf - netDebt) / fullyDilutedShares`. Null si datos insuficientes |
+| evEbitda | number \| null | calculado | `(ebitda * multiples.target.evEbitda - netDebt) / fullyDilutedShares`. Null si datos insuficientes |
+| evEbit | number \| null | calculado | `(ebit * multiples.target.evEbit - netDebt) / fullyDilutedShares`. Null si datos insuficientes |
 | average | number \| null | calculado | `avg(per, evFcf, evEbitda, evEbit)` |
 | marginOfSafety | number \| null | calculado | `(evFcf / currentPrice) - 1` |
 
-Donde `netDebt`, `netIncome`, `fcf`, `ebitda`, `ebit`, `shares` corresponden al año proyectado.
+Donde `netDebt`, `netIncome`, `fcf`, `ebitda`, `ebit`, `fullyDilutedShares` corresponden al año proyectado.
 
 *cagr5y* (usa el 5to año proyectado)
 
@@ -663,6 +665,8 @@ CompanyValuation
 | | financials | { [year]: { incomeStatement, freeCashFlow, roic } } | 10 años. Cada año contiene los inputs definidos en HistoricalYear |
 
 **Campos**
+
+*propiedades*
 
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
