@@ -1,4 +1,9 @@
 export type {
+  CompanyValuationInputs,
+  CompanyYearFinancials,
+} from "./company-valuation"
+export { CompanyValuation } from "./company-valuation"
+export type {
   FreeCashFlow,
   FreeCashFlowInputs,
   HistoricalYearInputs,
@@ -9,6 +14,13 @@ export type {
   Valuation,
 } from "./historical-year"
 export { HistoricalYear } from "./historical-year"
+export type {
+  BuyPrice,
+  Cagr5y,
+  IntrinsicValueInputs,
+  TargetPriceSet,
+} from "./intrinsic-value"
+export { IntrinsicValue } from "./intrinsic-value"
 export type { MultipleSet, MultiplesInputs } from "./multiples"
 export { Multiples } from "./multiples"
 export type {
