@@ -1,40 +1,16 @@
 import { describe, expect, test } from "bun:test"
-import { HistoricalYear } from "../src/historical-year"
 import * as amzn from "./fixtures/amzn"
 import * as cost from "./fixtures/cost"
 import * as nke from "./fixtures/nke"
 import * as nvda from "./fixtures/nvda"
-
-const TOLERANCE = 1e-4
-
-function isClose(actual: unknown, expected: unknown): boolean {
-  if (actual === null && expected === null) return true
-  if (actual === null || expected === null) return false
-  if (typeof actual !== "number" || typeof expected !== "number") return false
-  if (actual === 0 && expected === 0) return true
-  const denom = Math.max(Math.abs(actual), Math.abs(expected))
-  if (denom === 0) return true
-  return Math.abs(actual - expected) / denom <= TOLERANCE
-}
+import {
+  buildHistoricalYears,
+  type FixtureInputs,
+  isClose,
+} from "./helpers/fixtures"
 
 type FixtureModule = {
-  inputs: {
-    ticker: string
-    sector: string
-    currentPrice: number
-    financials: Record<
-      string,
-      {
-        incomeStatement: ConstructorParameters<
-          typeof HistoricalYear
-        >[0]["incomeStatement"]
-        freeCashFlow: ConstructorParameters<
-          typeof HistoricalYear
-        >[0]["freeCashFlow"]
-        roic: ConstructorParameters<typeof HistoricalYear>[0]["roic"]
-      }
-    >
-  }
+  inputs: FixtureInputs
   expected: {
     historical: Record<string, Record<string, Record<string, unknown>>>
   }
@@ -42,28 +18,7 @@ type FixtureModule = {
 
 function runFixture(name: string, mod: FixtureModule) {
   describe(name, () => {
-    const years = Object.keys(mod.inputs.financials)
-      .map((y) => Number.parseInt(y, 10))
-      .sort((a, b) => a - b)
-    const lastYear = years[years.length - 1]
-
-    const built: Record<number, HistoricalYear> = {}
-    let prev: HistoricalYear | null = null
-    for (const year of years) {
-      const yearData = mod.inputs.financials[String(year)]
-      if (!yearData) throw new Error(`missing year ${year}`)
-      const isLast = year === lastYear
-      const hy: HistoricalYear = new HistoricalYear({
-        year,
-        currentPrice: isLast ? mod.inputs.currentPrice : null,
-        incomeStatement: yearData.incomeStatement,
-        freeCashFlow: yearData.freeCashFlow,
-        roic: yearData.roic,
-        prev,
-      })
-      built[year] = hy
-      prev = hy
-    }
+    const { years, built } = buildHistoricalYears(mod.inputs)
 
     for (const year of years) {
       test(`${year}`, () => {
