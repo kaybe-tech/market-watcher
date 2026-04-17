@@ -9,6 +9,9 @@
   "scripts": {
     "build": "turbo run build",
     "test": "turbo run test",
+    "test:coverage": "turbo run test:coverage",
+    "typecheck": "turbo run typecheck",
+    "coverage:open": "open packages/valuation-engine/coverage/html/index.html",
     "check": "biome check --write ."
   },
   "devDependencies": {
