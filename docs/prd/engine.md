@@ -67,19 +67,12 @@ HistoricalYear
 | incomeStatement | taxExpense | number | Negativo. Positivo solo si es devolución de impuestos |
 | incomeStatement | minorityInterests | number | Positivo. Mismo signo que el reporte financiero |
 | incomeStatement | fullyDilutedShares | number | En millones |
-| freeCashFlow | capitalExpenditure | number | |
-| freeCashFlow | saleOfIntangibleAssets | number | |
-| freeCashFlow | saleOfPPE | number | |
+| freeCashFlow | capexMaintenance | number | Negativo o cero. Se ingresa directo (MIN vs D&A ya aplicado) |
 | freeCashFlow | inventories | number | |
 | freeCashFlow | accountsReceivable | number | |
 | freeCashFlow | accountsPayable | number | |
 | freeCashFlow | unearnedRevenue | number | |
-| freeCashFlow | netChangeInCash | number | |
-| freeCashFlow | cashAcquisitions | number | |
-| freeCashFlow | dividendsPaid | number | |
-| freeCashFlow | repurchaseOfCommonStock | number | |
-| freeCashFlow | totalDebtRepaid | number | |
-| freeCashFlow | totalDebtIssued | number | |
+| freeCashFlow | dividendsPaid | number | Negativo o cero. Usado para proyección de equity |
 | roic | cashAndEquivalents | number | |
 | roic | marketableSecurities | number | |
 | roic | shortTermDebt | number | |
@@ -124,11 +117,7 @@ HistoricalYear
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
 | ebitda | number | calculado | `incomeStatement.ebitda` |
-| capitalExpenditure | number | input | |
-| saleOfIntangibleAssets | number | input | |
-| saleOfPPE | number | input | |
-| netCapex | number | calculado | `capitalExpenditure + saleOfIntangibleAssets + saleOfPPE` |
-| capexMaintenance | number | calculado | `IF(ABS(netCapex) < ABS(incomeStatement.depreciationAmortization), netCapex, incomeStatement.depreciationAmortization)` |
+| capexMaintenance | number | input | Negativo o cero |
 | totalInterest | number | calculado | `incomeStatement.totalInterest` |
 | taxesPaid | number | calculado | `incomeStatement.taxExpense` |
 | inventories | number | input | |
@@ -143,22 +132,12 @@ HistoricalYear
 | fcfYoYGrowth | number \| null | calculado | `(fcf - prev.fcf) / prev.fcf`. Null si no hay año anterior |
 | fcfPerShare | number | calculado | `fcf / incomeStatement.fullyDilutedShares` |
 | fcfPerShareYoYGrowth | number \| null | calculado | `(fcfPerShare - prev.fcfPerShare) / prev.fcfPerShare`. Null si no hay año anterior |
-| netChangeInCash | number | input | |
 | capexMaintenanceSalesRatio | number | calculado | `ABS(capexMaintenance) / incomeStatement.sales` |
 | workingCapitalSalesRatio | number | calculado | `workingCapital / incomeStatement.sales` |
 | fcfSalesRatio | number | calculado | `fcf / incomeStatement.sales` |
 | cashConversion | number \| null | calculado | `fcf / ebitda`. Null si EBITDA es 0 |
-| cashAcquisitions | number | input | |
-| dividendsPaid | number | input | |
-| repurchaseOfCommonStock | number | input | |
-| totalDebtRepaid | number | input | |
-| totalDebtIssued | number | input | |
-| capexExpansion | number \| null | calculado | `ABS(netCapex - capexMaintenance) / fcf`. Null si FCF <= 0 |
-| acquisitions | number \| null | calculado | `ABS(cashAcquisitions) / fcf`. Null si FCF <= 0 |
+| dividendsPaid | number | input | Negativo o cero |
 | dividendsFcfRatio | number \| null | calculado | `ABS(dividendsPaid) / fcf`. Null si FCF <= 0 |
-| buybacks | number \| null | calculado | `ABS(repurchaseOfCommonStock) / fcf`. Null si FCF <= 0 |
-| netDebtRepayment | number \| null | calculado | `MAX(ABS(totalDebtRepaid) - totalDebtIssued, 0) / fcf`. Null si FCF <= 0 |
-| totalCapitalAllocation | number \| null | calculado | `capexExpansion + acquisitions + dividendsFcfRatio + buybacks + netDebtRepayment`. Null si FCF <= 0 |
 
 *roic*
 
@@ -176,7 +155,6 @@ HistoricalYear
 | investedCapital | number | calculado | `equity + shortTermDebt + longTermDebt + currentOperatingLeases + nonCurrentOperatingLeases - marketableSecurities` |
 | roe | number \| null | calculado | `incomeStatement.netIncome / equity`. Null si equity es 0 |
 | roic | number \| null | calculado | `ebitAfterTax / investedCapital`. Null si investedCapital es 0 |
-| reinvestmentRate | number \| null | calculado | `ABS(freeCashFlow.netCapex - freeCashFlow.capexMaintenance + freeCashFlow.cashAcquisitions) / freeCashFlow.fcf`. Null si FCF <= 0 |
 
 *valuation*
 
@@ -210,47 +188,39 @@ Cada campo solo puede calcularse después de que todas sus dependencias estén d
 15. eps
 16. epsYoYGrowth
 
-*freeCashFlow* (23 campos calculados):
+*freeCashFlow* (16 campos calculados):
 
 17. ebitda
-18. netCapex
-19. capexMaintenance
-20. totalInterest
-21. taxesPaid
-22. workingCapital
-23. changeInWorkingCapital
-24. otherAdjustments
-25. fcf
-26. fcfMargin
-27. fcfYoYGrowth
-28. fcfPerShare
-29. fcfPerShareYoYGrowth
-30. capexMaintenanceSalesRatio
-31. workingCapitalSalesRatio
-32. fcfSalesRatio
-33. cashConversion
-34. capexExpansion
-35. acquisitions
-36. dividendsFcfRatio
-37. buybacks
-38. netDebtRepayment
-39. totalCapitalAllocation
+18. totalInterest
+19. taxesPaid
+20. workingCapital
+21. changeInWorkingCapital
+22. otherAdjustments
+23. fcf
+24. fcfMargin
+25. fcfYoYGrowth
+26. fcfPerShare
+27. fcfPerShareYoYGrowth
+28. capexMaintenanceSalesRatio
+29. workingCapitalSalesRatio
+30. fcfSalesRatio
+31. cashConversion
+32. dividendsFcfRatio
 
-*roic* (6 campos calculados):
+*roic* (5 campos calculados):
 
-40. ebitAfterTax
-41. totalDebt
-42. investedCapital
-43. roe
-44. roic
-45. reinvestmentRate
+33. ebitAfterTax
+34. totalDebt
+35. investedCapital
+36. roe
+37. roic
 
 *valuation* (4 campos calculados):
 
-46. marketCap
-47. netDebt
-48. netDebtEbitdaRatio
-49. enterpriseValue
+38. marketCap
+39. netDebt
+40. netDebtEbitdaRatio
+41. enterpriseValue
 
 #### ProjectionAssumptions
 
