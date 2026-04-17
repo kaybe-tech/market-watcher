@@ -47,6 +47,8 @@ Recibe los inputs de un año y computa todos los campos derivados. Contiene cuat
 ```
 HistoricalYear
 ├── year: number
+├── currentPrice: number | null
+├── prev: HistoricalYear | null
 ├── incomeStatement
 ├── freeCashFlow
 ├── roic
@@ -58,7 +60,8 @@ HistoricalYear
 | Sub-objeto | Campo | Tipo | Nota |
 |---|---|---|---|
 | | year | number | |
-| | currentPrice | number | |
+| | currentPrice | number \| null | Null para años no-actuales; el último año histórico recibe el precio real |
+| | prev | HistoricalYear \| null | Año histórico anterior. Null en el primer año |
 | incomeStatement | sales | number | Positivo |
 | incomeStatement | depreciationAmortization | number | Negativo. Proviene de los flujos de caja operativos |
 | incomeStatement | ebit | number | Negativo si hay pérdida operativa |
@@ -101,7 +104,7 @@ HistoricalYear
 | totalInterest | number | calculado | `interestExpense + interestIncome` |
 | earningsBeforeTaxes | number | calculado | `ebit + totalInterest` |
 | taxExpense | number | input | Negativo |
-| taxRate | number \| null | calculado | `ABS(taxExpense) / earningsBeforeTaxes`. Null si EBT es 0 |
+| taxRate | number | calculado | `ABS(taxExpense) / earningsBeforeTaxes` |
 | consolidatedNetIncome | number | calculado | `earningsBeforeTaxes + taxExpense` |
 | minorityInterests | number | input | Positivo |
 | netIncome | number | calculado | `consolidatedNetIncome + minorityInterests` |
@@ -160,10 +163,10 @@ HistoricalYear
 
 | Campo | Tipo | Origen | Fórmula |
 |---|---|---|---|
-| marketCap | number | calculado | `currentPrice * incomeStatement.fullyDilutedShares` |
+| marketCap | number \| null | calculado | `currentPrice * incomeStatement.fullyDilutedShares`. Null si currentPrice es null |
 | netDebt | number | calculado | `(roic.shortTermDebt + roic.longTermDebt) - (roic.cashAndEquivalents + roic.marketableSecurities)` |
 | netDebtEbitdaRatio | number \| null | calculado | `netDebt / incomeStatement.ebitda`. Null si EBITDA es 0 |
-| enterpriseValue | number | calculado | `marketCap + netDebt` |
+| enterpriseValue | number \| null | calculado | `marketCap + netDebt`. Null si marketCap es null |
 
 **Orden de cálculo**
 
