@@ -10,6 +10,14 @@ export type {
 } from "./historical-year"
 export { HistoricalYear } from "./historical-year"
 export type {
+  ProjectedFreeCashFlow,
+  ProjectedIncomeStatement,
+  ProjectedRoic,
+  ProjectedValuation,
+  ProjectedYearInputs,
+} from "./projected-year"
+export { ProjectedYear } from "./projected-year"
+export type {
   FreeCashFlowAssumptions,
   IncomeStatementAssumptions,
   ProjectionAssumptionsInputs,
