@@ -9,6 +9,8 @@ export type {
   Valuation,
 } from "./historical-year"
 export { HistoricalYear } from "./historical-year"
+export type { MultipleSet, MultiplesInputs } from "./multiples"
+export { Multiples } from "./multiples"
 export type {
   ProjectedFreeCashFlow,
   ProjectedIncomeStatement,
