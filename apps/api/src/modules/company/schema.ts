@@ -1,4 +1,5 @@
 import type { CompanyValuation } from "@market-watcher/valuation-engine"
+import type { InferSelectModel } from "drizzle-orm"
 import {
   integer,
   primaryKey,
@@ -56,3 +57,7 @@ export const valuations = sqliteTable("valuations", {
   result: text("result", { mode: "json" }).$type<CompanyValuation>().notNull(),
   createdAt: text("created_at").notNull(),
 })
+
+export type TickerStateRow = InferSelectModel<typeof tickerState>
+export type YearlyFinancialsRow = InferSelectModel<typeof yearlyFinancials>
+export type ValuationRow = InferSelectModel<typeof valuations>
