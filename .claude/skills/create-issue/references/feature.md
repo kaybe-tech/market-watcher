@@ -36,7 +36,7 @@ Referencia: `docs/prd/<archivo>.md`, sección "<sección>".
 ## Labels
 
 - `enhancement` — siempre para features.
-- Un label por módulo/paquete afectado. Labels vigentes conocidos: `valuation-engine`. Si no estás seguro de que un label exista, preguntar al usuario antes de usarlo; no crear labels sin permiso.
+- Un label por módulo, paquete o servicio afectado. Labels vigentes conocidos: `valuation-engine`. Si no estás seguro de que un label exista, preguntar al usuario antes de usarlo; no crear labels sin permiso.
 
 ## Convenciones
 
@@ -45,6 +45,7 @@ Referencia: `docs/prd/<archivo>.md`, sección "<sección>".
 - **Título**: corto, en español, sin número de issue, sin punto final.
 - **Referencia al PRD**: incluirla siempre que exista.
 - **Criterios de aceptación**: verificables y ejecutables, no subjetivos.
+- **Terminología de workspaces**: el monorepo distingue `packages/*` (librerías reutilizables, ej: `valuation-engine`) de `apps/*` (aplicaciones ejecutables / servicios, ej: `api`). Al redactar la descripción y estructura, referirse a un workspace de `apps/*` como "servicio" o "app", no como "package" o "librería"; el término "package" a secas queda para los de `packages/*`. El nombre npm del workspace (`@market-watcher/<name>`) se usa solo como identificador técnico.
 
 ## Ejemplo de referencia
 
