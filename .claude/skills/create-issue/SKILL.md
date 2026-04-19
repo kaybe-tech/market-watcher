@@ -26,13 +26,12 @@ Flujo para crear issues en GitHub en `kaybe-tech/market-watcher`. El usuario pro
 
 3. **Iterar el contenido con el usuario.** Proponer el borrador; aplicar correcciones hasta que el usuario apruebe explícitamente.
 
-4. **Crear el issue solo tras aprobación.** Usar la tool `mcp__github__create_issue` con:
-   - `owner`: `kaybe-tech`
-   - `repo`: `market-watcher`
-   - `title`: título aprobado
-   - `body`: cuerpo en markdown
-   - `labels`: array de labels
-   - `assignees`: array de usuarios asignados (si aplica)
+4. **Crear el issue solo tras aprobación.** Usar `gh issue create` con:
+   - `--repo kaybe-tech/market-watcher`
+   - `--title` con el título aprobado
+   - `--body` con el cuerpo en markdown (pasarlo vía HEREDOC para preservar formato)
+   - `--label` por cada label aplicable
+   - `--assignee` por cada usuario asignado (si aplica)
 
 5. **No tocar nada más.** Este skill crea issues; no crea branches, PRs ni modifica código.
 
@@ -42,5 +41,5 @@ Flujo para crear issues en GitHub en `kaybe-tech/market-watcher`. El usuario pro
 - Si no estás seguro de que un label exista en el repositorio, preguntar al usuario antes de usarlo; no crear labels sin permiso explícito.
 - Nunca asumir el tipo de issue: preguntarlo si no queda claro.
 - Idioma: título y cuerpo del issue en español. Identificadores, nombres técnicos, comandos, nombres de archivos, clases, funciones y variables se mantienen en inglés (no se traducen).
-- Un issue por invocación de la tool. Si hay varios, iterar cada uno por separado en la conversación.
-- Tras crear el issue, responder al usuario con el número y URL del issue creado (vienen en el resultado de la tool).
+- Un issue por invocación del comando. Si hay varios, iterar cada uno por separado en la conversación.
+- Tras crear el issue, responder al usuario con el número y URL del issue creado (vienen en la salida del comando).

@@ -7,15 +7,15 @@ description: Use when classifying, planning, or working on GitHub issues from ka
 
 ## Herramientas
 
-Operaciones remotas sobre issues usan el MCP de GitHub:
-- `mcp__github__get_issue` — leer el contenido del issue
-- `mcp__github__list_issues` / `mcp__github__search_issues` — cuando se trabajan varios o hay que encontrarlos
-- `mcp__github__add_issue_comment` — comentar hallazgos o resultados
-- `mcp__github__update_issue` — cambiar labels, assignees o estado
+Operaciones remotas sobre issues usan `gh`:
+- `gh issue view <n>` — leer el contenido del issue
+- `gh issue list` / `gh search issues` — cuando se trabajan varios o hay que encontrarlos
+- `gh issue comment <n>` — comentar hallazgos o resultados
+- `gh issue edit <n>` — cambiar labels, assignees o estado
 
 ## Clasificación del issue
 
-Primero leer el issue con `mcp__github__get_issue`. Luego clasificar por **tipo de trabajo**:
+Primero leer el issue con `gh issue view`. Luego clasificar por **tipo de trabajo**:
 - **Código** — Implementar feature, fix, refactor. Produce cambios en el codebase.
 - **Documentación** — Escribir o actualizar docs, PRDs, specs. Produce cambios en archivos pero no en código funcional.
 - **Investigación** — Analizar, comparar opciones, responder preguntas técnicas. No produce cambios en archivos.
@@ -35,7 +35,7 @@ Después por **complejidad** (solo para tipos que producen cambios):
 **Investigación:**
 - No crear branch ni PR
 - Investigar y presentar hallazgos al usuario
-- Preguntar si quiere comentar los resultados en el issue con `mcp__github__add_issue_comment`
+- Preguntar si quiere comentar los resultados en el issue con `gh issue comment`
 
 **Discusión/Definición:**
 - Presentar el contexto del issue

@@ -7,11 +7,11 @@ description: Use when creating pull requests in market-watcher, writing PR title
 
 ## Herramientas
 
-El PR se crea con `mcp__github__create_pull_request`:
-- `owner: kaybe-tech`, `repo: market-watcher`
-- `head`: branch actual, `base: main`
-- `assignees: ["kaybe-tech"]`
-- `title` y `body` solo tras aprobación explícita del usuario
+El PR se crea con `gh pr create`:
+- Desde el repo `kaybe-tech/market-watcher`
+- Desde la branch actual contra `--base main`
+- `--assignee kaybe-tech`
+- `--title` y `--body` solo tras aprobación explícita del usuario
 
 ## Título
 
@@ -39,7 +39,7 @@ Closes #N, #M
 
 ## Assignees
 
-- Siempre `kaybe-tech` (en el campo `assignees` de la tool)
+- Siempre `kaybe-tech` (con el flag `--assignee kaybe-tech`)
 
 ## Ejemplo simple (con issue)
 
