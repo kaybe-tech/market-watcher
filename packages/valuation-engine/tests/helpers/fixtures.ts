@@ -14,7 +14,6 @@ export function isClose(actual: unknown, expected: unknown): boolean {
 
 export interface FixtureInputs {
   ticker: string
-  sector: string
   currentPrice: number
   financials: Record<
     string,

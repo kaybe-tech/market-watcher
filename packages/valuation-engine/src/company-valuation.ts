@@ -29,7 +29,6 @@ export interface CompanyValuationInputs {
   ticker: string
   name?: string
   currentPrice: number
-  sector: string
   financials: Record<number, CompanyYearFinancials>
 }
 
@@ -39,7 +38,6 @@ export class CompanyValuation {
   readonly ticker: string
   readonly name: string | null
   readonly currentPrice: number
-  readonly sector: string
   readonly historical: Record<number, HistoricalYear>
   readonly assumptions: ProjectionAssumptions
   readonly projected: Record<number, ProjectedYear>
@@ -47,14 +45,13 @@ export class CompanyValuation {
   readonly intrinsicValue: IntrinsicValue
 
   constructor(inputs: CompanyValuationInputs) {
-    const { ticker, name, currentPrice, sector, financials } = inputs
+    const { ticker, name, currentPrice, financials } = inputs
     if (currentPrice <= 0) {
       throw new Error("CompanyValuation requires currentPrice > 0")
     }
     this.ticker = ticker
     this.name = name ?? null
     this.currentPrice = currentPrice
-    this.sector = sector
 
     this.historical = CompanyValuation.buildHistorical(financials, currentPrice)
     this.assumptions = new ProjectionAssumptions({
@@ -118,7 +115,7 @@ export class CompanyValuation {
     return [
       HEADER_LINE,
       `${INDENT}${title}`,
-      `${INDENT}Precio actual: ${formatPrice(this.currentPrice)} | Sector: ${this.sector}`,
+      `${INDENT}Precio actual: ${formatPrice(this.currentPrice)}`,
       HEADER_LINE,
     ]
   }
@@ -149,8 +146,7 @@ export class CompanyValuation {
 
   private buildTargetPriceSection(): string[] {
     const years = this.projectedYearsSorted()
-    const header =
-      `${INDENT}${padLabel("")}` + years.map((y) => padRight(`${y}e`)).join("")
+    const header = `${INDENT}${padLabel("")}${years.map((y) => padRight(`${y}e`)).join("")}`
     const rows: Array<
       [string, keyof (typeof this.intrinsicValue.targetPrice)[number]]
     > = [
@@ -179,8 +175,7 @@ export class CompanyValuation {
 
   private buildMarginOfSafetySection(): string[] {
     const years = this.projectedYearsSorted()
-    const header =
-      `${INDENT}${padLabel("")}` + years.map((y) => padRight(`${y}e`)).join("")
+    const header = `${INDENT}${padLabel("")}${years.map((y) => padRight(`${y}e`)).join("")}`
     const cells = years
       .map((y) => {
         const tp = this.intrinsicValue.targetPrice[y]

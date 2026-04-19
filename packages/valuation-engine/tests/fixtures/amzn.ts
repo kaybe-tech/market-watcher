@@ -1,6 +1,5 @@
 export const inputs = {
   ticker: "AMZN",
-  sector: "Consumer Discretionary",
   currentPrice: 249.19,
   financials: {
     2016: {
