@@ -1,9 +1,17 @@
 ---
 name: pr-conventions
-description: Use when creating pull requests in market-watcher, writing PR titles or bodies, or assigning reviewers.
+description: Use when creating pull requests in market-watcher, writing PR titles or bodies.
 ---
 
 # PR Conventions
+
+## Herramientas
+
+El PR se crea con `mcp__github__create_pull_request`:
+- `owner: kaybe-tech`, `repo: market-watcher`
+- `head`: branch actual, `base: main`
+- `assignees: ["kaybe-tech"]`
+- `title` y `body` solo tras aprobación explícita del usuario
 
 ## Título
 
@@ -29,9 +37,9 @@ Closes #N, #M
 - La sección "Issues" solo se incluye cuando el PR está relacionado a issues
 - `Closes` para cerrar los issues al mergear
 
-## Assignee
+## Assignees
 
-- Siempre asignar a `kaybe-tech`
+- Siempre `kaybe-tech` (en el campo `assignees` de la tool)
 
 ## Ejemplo simple (con issue)
 
