@@ -1,0 +1,300 @@
+import { describe, expect, it } from "bun:test"
+import { migrate } from "drizzle-orm/bun-sqlite/migrator"
+import { createDb } from "@/db"
+import { Company } from "@/modules/company/company"
+import { CompanyRepository } from "@/modules/company/repository"
+import type {
+  TickerStateRow,
+  YearlyFinancialsRow,
+} from "@/modules/company/schema"
+
+const migrationsFolder = `${import.meta.dir}/../src/db/migrations`
+
+const setup = () => {
+  const db = createDb(":memory:")
+  migrate(db, { migrationsFolder })
+  return new Company(new CompanyRepository(db))
+}
+
+const completeYearRow = (
+  ticker: string,
+  fiscalYearEnd: string,
+  overrides: Partial<YearlyFinancialsRow> = {},
+): YearlyFinancialsRow => ({
+  ticker,
+  fiscalYearEnd,
+  sales: 100,
+  depreciationAmortization: 10,
+  ebit: 50,
+  interestExpense: 5,
+  interestIncome: 2,
+  taxExpense: 8,
+  minorityInterests: 0,
+  fullyDilutedShares: 1000,
+  capexMaintenance: 15,
+  inventories: 20,
+  accountsReceivable: 30,
+  accountsPayable: 25,
+  unearnedRevenue: 5,
+  dividendsPaid: 10,
+  cashAndEquivalents: 40,
+  marketableSecurities: 10,
+  shortTermDebt: 5,
+  longTermDebt: 30,
+  currentOperatingLeases: 2,
+  nonCurrentOperatingLeases: 8,
+  equity: 200,
+  ...overrides,
+})
+
+const tickerStateRow = (
+  overrides: Partial<TickerStateRow> = {},
+): TickerStateRow => ({
+  ticker: "AAPL",
+  latestFiscalYearEnd: "2025-09-27",
+  pendingValuation: true,
+  currentPrice: 180,
+  ...overrides,
+})
+
+describe("Company - applyYearlyFinancialsPatch (inmutabilidad)", () => {
+  it("año inexistente + datos entrantes → patch con todos los campos, escritura efectiva y año nuevo", () => {
+    const company = setup()
+    const result = company.applyYearlyFinancialsPatch(null, {
+      fiscalYearEnd: "2025-09-27",
+      incomeStatement: { sales: 1, ebit: 2 },
+      freeCashFlow: { capexMaintenance: 3 },
+    })
+    expect(result.isNewYear).toBe(true)
+    expect(result.hasWrites).toBe(true)
+    expect(result.patch).toEqual({ sales: 1, ebit: 2, capexMaintenance: 3 })
+  })
+
+  it("año inexistente + envío sin sub-objetos financieros → sin escritura efectiva", () => {
+    const company = setup()
+    const result = company.applyYearlyFinancialsPatch(null, {
+      fiscalYearEnd: "2025-09-27",
+    })
+    expect(result.isNewYear).toBe(true)
+    expect(result.hasWrites).toBe(false)
+    expect(result.patch).toEqual({})
+  })
+
+  it("año existente totalmente poblado + envío con los mismos campos → sin escritura efectiva", () => {
+    const company = setup()
+    const current = completeYearRow("AAPL", "2025-09-27")
+    const result = company.applyYearlyFinancialsPatch(current, {
+      fiscalYearEnd: "2025-09-27",
+      incomeStatement: { sales: 999, ebit: 888 },
+      freeCashFlow: { capexMaintenance: 777 },
+      roic: { equity: 666 },
+    })
+    expect(result.isNewYear).toBe(false)
+    expect(result.hasWrites).toBe(false)
+    expect(result.patch).toEqual({})
+  })
+
+  it("año existente con campos en null + envío que los trae → solo esos campos entran a la escritura", () => {
+    const company = setup()
+    const current = completeYearRow("AAPL", "2025-09-27", {
+      sales: null,
+      ebit: null,
+      capexMaintenance: null,
+    })
+    const result = company.applyYearlyFinancialsPatch(current, {
+      fiscalYearEnd: "2025-09-27",
+      incomeStatement: { sales: 111, ebit: 222, interestExpense: 333 },
+      freeCashFlow: { capexMaintenance: 444, inventories: 555 },
+    })
+    expect(result.isNewYear).toBe(false)
+    expect(result.hasWrites).toBe(true)
+    expect(result.patch).toEqual({
+      sales: 111,
+      ebit: 222,
+      capexMaintenance: 444,
+    })
+  })
+
+  it("año existente con un campo ya poblado + envío con valor distinto para ese campo → no se altera", () => {
+    const company = setup()
+    const current = completeYearRow("AAPL", "2025-09-27", { sales: 100 })
+    const result = company.applyYearlyFinancialsPatch(current, {
+      fiscalYearEnd: "2025-09-27",
+      incomeStatement: { sales: 999 },
+    })
+    expect(result.isNewYear).toBe(false)
+    expect(result.hasWrites).toBe(false)
+    expect(result.patch).toEqual({})
+  })
+})
+
+describe("Company - consolidateConsecutiveYears", () => {
+  it("historial de 2 años completos consecutivos → serie de 2", () => {
+    const company = setup()
+    const rows = [
+      completeYearRow("AAPL", "2025-09-27"),
+      completeYearRow("AAPL", "2024-09-27"),
+    ]
+    const series = company.consolidateConsecutiveYears(rows, "2025-09-27")
+    expect(series.map((r) => r.fiscalYearEnd)).toEqual([
+      "2025-09-27",
+      "2024-09-27",
+    ])
+  })
+
+  it("historial con un año intermedio incompleto → serie limitada a años completos hasta el gap", () => {
+    const company = setup()
+    const rows = [
+      completeYearRow("AAPL", "2025-09-27"),
+      completeYearRow("AAPL", "2024-09-27", { sales: null }),
+      completeYearRow("AAPL", "2023-09-27"),
+      completeYearRow("AAPL", "2022-09-27"),
+    ]
+    const series = company.consolidateConsecutiveYears(rows, "2025-09-27")
+    expect(series.map((r) => r.fiscalYearEnd)).toEqual(["2025-09-27"])
+  })
+
+  it("historial de 15 años completos consecutivos → serie de 10", () => {
+    const company = setup()
+    const rows: YearlyFinancialsRow[] = []
+    for (let year = 2025; year >= 2011; year--) {
+      rows.push(completeYearRow("AAPL", `${year}-09-27`))
+    }
+    const series = company.consolidateConsecutiveYears(rows, "2025-09-27")
+    expect(series).toHaveLength(10)
+    expect(series[0]?.fiscalYearEnd).toBe("2025-09-27")
+    expect(series[9]?.fiscalYearEnd).toBe("2016-09-27")
+  })
+
+  it("latestFiscalYearEnd con datos incompletos → serie vacía", () => {
+    const company = setup()
+    const rows = [
+      completeYearRow("AAPL", "2025-09-27", { equity: null }),
+      completeYearRow("AAPL", "2024-09-27"),
+    ]
+    const series = company.consolidateConsecutiveYears(rows, "2025-09-27")
+    expect(series).toEqual([])
+  })
+})
+
+describe("Company - isYearComplete", () => {
+  it("año con los 21 campos poblados → completo", () => {
+    const company = setup()
+    expect(company.isYearComplete(completeYearRow("AAPL", "2025-09-27"))).toBe(
+      true,
+    )
+  })
+
+  it("año con cualquier campo null → incompleto", () => {
+    const company = setup()
+    const row = completeYearRow("AAPL", "2025-09-27", { equity: null })
+    expect(company.isYearComplete(row)).toBe(false)
+  })
+})
+
+describe("Company - missingFieldsOfYear", () => {
+  it("año totalmente poblado → sin entradas", () => {
+    const company = setup()
+    expect(
+      company.missingFieldsOfYear(completeYearRow("AAPL", "2025-09-27")),
+    ).toEqual({})
+  })
+
+  it("año con campos faltantes en varios sub-objetos → agrupado, omite sub-objetos completos", () => {
+    const company = setup()
+    const row = completeYearRow("AAPL", "2025-09-27", {
+      sales: null,
+      ebit: null,
+      capexMaintenance: null,
+    })
+    expect(company.missingFieldsOfYear(row)).toEqual({
+      incomeStatement: ["sales", "ebit"],
+      freeCashFlow: ["capexMaintenance"],
+    })
+  })
+})
+
+describe("Company - missingTickerFields", () => {
+  it("currentPrice presente → sin faltantes", () => {
+    const company = setup()
+    expect(company.missingTickerFields(tickerStateRow())).toEqual([])
+  })
+
+  it("currentPrice null → incluye currentPrice", () => {
+    const company = setup()
+    expect(
+      company.missingTickerFields(tickerStateRow({ currentPrice: null })),
+    ).toEqual(["currentPrice"])
+  })
+})
+
+describe("Company - consolidateMissing", () => {
+  it("precio presente y todos los años completos → resumen vacío", () => {
+    const company = setup()
+    const summary = company.consolidateMissing(tickerStateRow(), [
+      completeYearRow("AAPL", "2025-09-27"),
+      completeYearRow("AAPL", "2024-09-27"),
+    ])
+    expect(summary).toEqual({})
+  })
+
+  it("sin precio y todos los años completos → resumen con solo ticker", () => {
+    const company = setup()
+    const summary = company.consolidateMissing(
+      tickerStateRow({ currentPrice: null }),
+      [completeYearRow("AAPL", "2025-09-27")],
+    )
+    expect(summary).toEqual({ ticker: ["currentPrice"] })
+  })
+
+  it("precio y un año incompleto + otros completos → resumen con solo years, listando el incompleto", () => {
+    const company = setup()
+    const summary = company.consolidateMissing(tickerStateRow(), [
+      completeYearRow("AAPL", "2025-09-27"),
+      completeYearRow("AAPL", "2024-09-27", {
+        sales: null,
+        equity: null,
+      }),
+    ])
+    expect(summary).toEqual({
+      years: [
+        {
+          fiscalYearEnd: "2024-09-27",
+          incomeStatement: ["sales"],
+          roic: ["equity"],
+        },
+      ],
+    })
+  })
+
+  it("sin precio y varios años con gaps → resumen con ambas claves", () => {
+    const company = setup()
+    const summary = company.consolidateMissing(
+      tickerStateRow({ currentPrice: null }),
+      [
+        completeYearRow("AAPL", "2025-09-27", { sales: null }),
+        completeYearRow("AAPL", "2024-09-27", { capexMaintenance: null }),
+      ],
+    )
+    expect(summary).toEqual({
+      ticker: ["currentPrice"],
+      years: [
+        { fiscalYearEnd: "2025-09-27", incomeStatement: ["sales"] },
+        { fiscalYearEnd: "2024-09-27", freeCashFlow: ["capexMaintenance"] },
+      ],
+    })
+  })
+
+  it("años completos nunca aparecen en la clave years", () => {
+    const company = setup()
+    const summary = company.consolidateMissing(
+      tickerStateRow({ currentPrice: null }),
+      [
+        completeYearRow("AAPL", "2025-09-27"),
+        completeYearRow("AAPL", "2024-09-27", { equity: null }),
+        completeYearRow("AAPL", "2023-09-27"),
+      ],
+    )
+    expect(summary.years?.map((y) => y.fiscalYearEnd)).toEqual(["2024-09-27"])
+  })
+})
