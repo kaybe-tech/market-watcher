@@ -31,11 +31,13 @@ Estructura:
 <lista de los cambios principales realizados>
 
 ## Issues
-Closes #N, #M
+Closes #N
+Closes #M
 ```
 
 - La sección "Issues" solo se incluye cuando el PR está relacionado a issues
 - `Closes` para cerrar los issues al mergear
+- Un `Closes` por línea cuando hay múltiples issues; GitHub solo enlaza el issue que sigue inmediatamente al keyword
 
 ## Assignees
 
@@ -71,7 +73,8 @@ Título: Agregar modelo DCF para empresas generales
 - Agregar tests unitarios para el cálculo de WACC
 
 ## Issues
-Closes #5, #12
+Closes #5
+Closes #12
 ```
 
 ## Ejemplo sin issue
