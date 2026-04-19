@@ -11,6 +11,18 @@
         "typescript": "^6",
       },
     },
+    "apps/api": {
+      "name": "@market-watcher/api",
+      "dependencies": {
+        "hono": "^4.6.0",
+      },
+      "devDependencies": {
+        "@types/bun": "latest",
+      },
+      "peerDependencies": {
+        "typescript": "^6",
+      },
+    },
     "packages/valuation-engine": {
       "name": "@market-watcher/valuation-engine",
       "devDependencies": {
@@ -43,6 +55,8 @@
 
     "@lcov-viewer/cli": ["@lcov-viewer/cli@1.3.0", "", { "dependencies": { "commander": "^9.3.0" }, "bin": { "lcov-viewer": "lib/index.js" } }, "sha512-A9altXh2ZyeuagYZsJqVja6WMlgGJGcV+SHOOgIZB+CA2bfk78vgOqrPJrWg+IflFpoEzo1QeqwH4WbKSM4d9A=="],
 
+    "@market-watcher/api": ["@market-watcher/api@workspace:apps/api"],
+
     "@market-watcher/valuation-engine": ["@market-watcher/valuation-engine@workspace:packages/valuation-engine"],
 
     "@turbo/darwin-64": ["@turbo/darwin-64@2.9.6", "", { "os": "darwin", "cpu": "x64" }, "sha512-X/56SnVXIQZBLKwniGTwEQTGmtE5brSACnKMBWpY3YafuxVYefrC2acamfjgxP7BG5w3I+6jf0UrLoSzgPcSJg=="],
@@ -64,6 +78,8 @@
     "bun-types": ["bun-types@1.3.12", "", { "dependencies": { "@types/node": "*" } }, "sha512-HqOLj5PoFajAQciOMRiIZGNoKxDJSr6qigAttOX40vJuSp6DN/CxWp9s3C1Xwm4oH7ybueITwiaOcWXoYVoRkA=="],
 
     "commander": ["commander@9.5.0", "", {}, "sha512-KRs7WVDKg86PWiuAqhDrAQnTXZKraVcCc6vFdL14qrZ/DcWwuRo7VoiYXalXO7S5GKpqYiVEwCbgFDfxNHKJBQ=="],
+
+    "hono": ["hono@4.12.14", "", {}, "sha512-am5zfg3yu6sqn5yjKBNqhnTX7Cv+m00ox+7jbaKkrLMRJ4rAdldd1xPd/JzbBWspqaQv6RSTrgFN95EsfhC+7w=="],
 
     "turbo": ["turbo@2.9.6", "", { "optionalDependencies": { "@turbo/darwin-64": "2.9.6", "@turbo/darwin-arm64": "2.9.6", "@turbo/linux-64": "2.9.6", "@turbo/linux-arm64": "2.9.6", "@turbo/windows-64": "2.9.6", "@turbo/windows-arm64": "2.9.6" }, "bin": { "turbo": "bin/turbo" } }, "sha512-+v2QJey7ZUeUiuigkU+uFfklvNUyPI2VO2vBpMYJA+a1hKFLFiKtUYlRHdb3P9CrAvMzi0upbjI4WT+zKtqkBg=="],
 
