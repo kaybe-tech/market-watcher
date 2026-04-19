@@ -1,3 +1,10 @@
+---
+name: pr-conventions
+description: Use when creating pull requests in market-watcher, writing PR titles or bodies, or assigning reviewers.
+---
+
+# PR Conventions
+
 ## Título
 
 - En español

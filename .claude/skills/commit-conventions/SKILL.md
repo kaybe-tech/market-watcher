@@ -1,3 +1,10 @@
+---
+name: commit-conventions
+description: Use when creating git commits in market-watcher, writing commit messages, or reviewing commit message format.
+---
+
+# Commit Conventions
+
 ## Formato
 
 Conventional Commits en español:

@@ -1,3 +1,10 @@
+---
+name: issue-workflow
+description: Use when classifying, planning, or working on GitHub issues from kaybe-tech/market-watcher — before creating branches, implementing, or drafting PRs.
+---
+
+# Issue Workflow
+
 ## Clasificación del issue
 
 Primero por **tipo de trabajo**:
