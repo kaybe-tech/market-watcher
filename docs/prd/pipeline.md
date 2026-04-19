@@ -77,9 +77,9 @@ Describe cómo el servicio procesa una ingesta de datos financieros para un tick
 
 2. El servicio persiste los datos para cada año presente en el envío, aplicando inmutabilidad a nivel de campo: un campo que ya tiene valor no se sobreescribe.
 
-3. Si alguno de los años aportados es posterior al último año fiscal registrado para este ticker (o si es la primera vez que se ve este ticker), el servicio actualiza ese valor en el estado del ticker. Re-ingestas de años ya registrados no alteran este valor.
+3. Si alguno de los años aportados es posterior al último año fiscal registrado para este ticker (o si es la primera vez que se ve este ticker), el servicio actualiza ese valor en el estado del ticker. Re-ingestas de años ya registrados no alteran este valor. Si el envío incluye `currentPrice`, el servicio actualiza ese valor en el estado del ticker.
 
-4. Si el envío produjo al menos una escritura efectiva (algún campo que estaba null pasó a tener valor, o se creó un año nuevo), el servicio marca al ticker como pendiente de valorizar.
+4. Si el envío produjo al menos una escritura efectiva (algún campo que estaba null pasó a tener valor, o se creó un año nuevo), el servicio marca al ticker como pendiente de valorizar. Actualizar `currentPrice` no cuenta como escritura efectiva a estos efectos.
 
 5. Si tras el paso anterior el ticker quedó marcado como pendiente, el servicio dispara en segundo plano el flujo **Valoración de una compañía** y continúa sin esperar su resultado.
 
@@ -97,7 +97,7 @@ Describe cómo el servicio transforma los datos financieros disponibles en una v
 
 2. El servicio reúne los datos registrados del ticker para el año fiscal más reciente y hasta los 9 años históricos previos (10 años en total como máximo).
 
-3. Verifica si los datos disponibles cubren los campos que el engine necesita para ejecutar una valoración. La valoración requiere al menos 2 años fiscales consecutivos —y hasta 10— donde todos los campos de los sub-objetos `incomeStatement`, `freeCashFlow` y `roic` estén poblados.
+3. Verifica si los datos disponibles cubren los campos que el engine necesita para ejecutar una valoración. La valoración requiere al menos 2 años fiscales consecutivos —y hasta 10— donde todos los campos de los sub-objetos `incomeStatement`, `freeCashFlow` y `roic` estén poblados, y que el `currentPrice` del ticker esté presente.
 
 4. Si los datos son suficientes:
    - Invoca al engine con los datos disponibles.
@@ -123,7 +123,7 @@ Describe cómo el cliente accede a la valoración vigente de un ticker y al esta
 3. El servicio responde al cliente con:
    - La valoración más reciente del ticker, si existe.
    - El estado del ticker, incluidos los flags `pending` y `valuationInProgress`.
-   - Si el ticker sigue pendiente tras el intento: para cada año fiscal con datos incompletos, los sub-objetos del engine (`incomeStatement`, `freeCashFlow`, `roic`) con los nombres de los campos que aún no tienen valor.
+   - Si el ticker sigue pendiente tras el intento: los campos faltantes a nivel del ticker (como `currentPrice` si nunca se ha enviado) y, para cada año fiscal con datos incompletos, los sub-objetos del engine (`incomeStatement`, `freeCashFlow`, `roic`) con los nombres de los campos que aún no tienen valor.
 
 ## Arquitectura
 
@@ -213,7 +213,7 @@ Plano de control del ticker. Una fila por ticker; se actualiza con cada ingesta.
 - Campos:
   - `latestFiscalYearEnd`: el año fiscal más reciente observado en los datos financieros del ticker.
   - `pendingValuation`: bandera que indica si el ticker tiene una valoración pendiente de cálculo.
-  - `currentPrice`: último precio observado en alguna ingesta del ticker.
+  - `currentPrice`: último precio observado en alguna ingesta del ticker. `null` si todavía no se ha enviado ninguno.
 
 #### Valuation
 
@@ -281,7 +281,7 @@ Recibe los datos financieros de una empresa desde un cliente. El servicio es agn
 
 ```
 {
-  currentPrice: number,
+  currentPrice?: number,
   years: [
     {
       fiscalYearEnd: "YYYY-MM-DD",
@@ -322,7 +322,7 @@ Recibe los datos financieros de una empresa desde un cliente. El servicio es agn
 - Modo estricto: se rechaza el request (400) si aparecen campos desconocidos en cualquier nivel del body.
 - Los campos presentes deben ser del tipo correcto; si no, 400.
 - Un campo financiero con valor `null` explícito se rechaza con 400; los campos opcionales simplemente se omiten.
-- `currentPrice` y `years` son requeridos; `fiscalYearEnd` dentro de cada año también.
+- `years` es requerido; `fiscalYearEnd` dentro de cada año también. `currentPrice` es opcional; cuando se envía, actualiza el precio del ticker.
 - Si `years` contiene más de un elemento con el mismo `fiscalYearEnd`, el request se rechaza con 400.
 - Todos los sub-objetos (`incomeStatement`, `freeCashFlow`, `roic`) y todos los campos dentro de ellos son opcionales.
 - `years` puede venir vacío: se acepta y no se procesa. La respuesta sigue siendo `200 OK` con `{ success: true }` y no dispara valoración.
@@ -355,25 +355,28 @@ Devuelve la valoración del ticker y, si sigue pendiente tras el intento sincró
 {
   ticker: string,
   latestFiscalYearEnd: "YYYY-MM-DD",
-  currentPrice: number,
+  currentPrice: number | null,
   valuation: ValuationResult | null,
   pending: boolean,
   valuationInProgress: boolean,
-  missing?: [
-    {
-      fiscalYearEnd: "YYYY-MM-DD",
-      incomeStatement?: string[],
-      freeCashFlow?: string[],
-      roic?: string[]
-    }
-  ]
+  missing?: {
+    ticker?: string[],              // p. ej. ["currentPrice"]
+    years?: [
+      {
+        fiscalYearEnd: "YYYY-MM-DD",
+        incomeStatement?: string[],
+        freeCashFlow?: string[],
+        roic?: string[]
+      }
+    ]
+  }
 }
 ```
 
 - `valuation`: `ValuationResult` correspondiente a la última ejecución exitosa del engine para ese ticker (por `createdAt` más reciente; desempate por `id` mayor). `null` si el ticker nunca se ha valorizado.
 - `pending`: `true` si el ticker sigue pendiente tras el intento sincrónico disparado por este request.
 - `valuationInProgress`: `true` si el servicio tiene un Flujo 2 en ejecución para este ticker al momento de responder, disparado por una ingesta previa, una consulta previa, o este mismo request. Informativo — permite al cliente saber que una nueva valoración puede estar por completarse; se recomienda re-consultar si el valor es `true`.
-- `missing`: presente solo cuando `pending === true`. Para cada año con datos incompletos, enumera los sub-objetos del engine que tienen campos faltantes. Cada sub-objeto contiene los nombres exactos de los campos que aún no están presentes, tal como los expone `HistoricalYear` como inputs. Los sub-objetos sin campos faltantes se omiten.
+- `missing`: presente solo cuando `pending === true`. `ticker` enumera los campos faltantes a nivel del ticker (p. ej. `currentPrice` cuando el precio nunca se ha enviado); se omite si no hay. `years` enumera, para cada año con datos incompletos, los sub-objetos del engine con los nombres exactos de los campos que aún no están presentes tal como los expone `HistoricalYear` como inputs; los sub-objetos sin campos faltantes se omiten, y la clave `years` se omite si no hay años con gaps.
 
 **Respuesta cuando el ticker no tiene registro (404 Not Found):**
 
