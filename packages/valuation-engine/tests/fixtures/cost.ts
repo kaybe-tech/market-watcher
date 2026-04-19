@@ -1,6 +1,5 @@
 export const inputs = {
   ticker: "COST",
-  sector: "Consumer Staples",
   currentPrice: 987.21,
   financials: {
     2016: {

@@ -45,7 +45,6 @@ function runFixture(name: string, mod: FixtureModule) {
 
     test("scalar properties", () => {
       expect(valuation.ticker).toBe(mod.inputs.ticker)
-      expect(valuation.sector).toBe(mod.inputs.sector)
       expectClose(
         "currentPrice",
         valuation.currentPrice,

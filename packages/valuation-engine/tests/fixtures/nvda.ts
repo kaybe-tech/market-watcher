@@ -1,6 +1,5 @@
 export const inputs = {
   ticker: "NVDA",
-  sector: "Technology",
   currentPrice: 188.22,
   financials: {
     2017: {
