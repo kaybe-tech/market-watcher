@@ -112,15 +112,14 @@ export class Company {
         existingYears,
       )
 
-      this.resolveTickerState(
+      const pendingValuation = this.resolveTickerState(
         ticker,
         previousState,
         maxEffectiveFiscalYearEnd,
         payload.currentPrice,
       )
 
-      const finalState = this.repository.getTickerState(ticker)
-      return { pendingValuation: finalState?.pendingValuation ?? false }
+      return { pendingValuation }
     })
   }
 
@@ -177,38 +176,22 @@ export class Company {
   private buildEngineFinancials(
     series: YearlyFinancialsRow[],
   ): Record<number, CompanyYearFinancials> {
+    const groups = ["incomeStatement", "freeCashFlow", "roic"] as const
     const financials: Record<number, CompanyYearFinancials> = {}
     for (const row of series) {
       const year = Number.parseInt(row.fiscalYearEnd.slice(0, 4), 10)
-      financials[year] = {
-        incomeStatement: {
-          sales: row.sales as number,
-          depreciationAmortization: row.depreciationAmortization as number,
-          ebit: row.ebit as number,
-          interestExpense: row.interestExpense as number,
-          interestIncome: row.interestIncome as number,
-          taxExpense: row.taxExpense as number,
-          minorityInterests: row.minorityInterests as number,
-          fullyDilutedShares: row.fullyDilutedShares as number,
-        },
-        freeCashFlow: {
-          capexMaintenance: row.capexMaintenance as number,
-          inventories: row.inventories as number,
-          accountsReceivable: row.accountsReceivable as number,
-          accountsPayable: row.accountsPayable as number,
-          unearnedRevenue: row.unearnedRevenue as number,
-          dividendsPaid: row.dividendsPaid as number,
-        },
-        roic: {
-          cashAndEquivalents: row.cashAndEquivalents as number,
-          marketableSecurities: row.marketableSecurities as number,
-          shortTermDebt: row.shortTermDebt as number,
-          longTermDebt: row.longTermDebt as number,
-          currentOperatingLeases: row.currentOperatingLeases as number,
-          nonCurrentOperatingLeases: row.nonCurrentOperatingLeases as number,
-          equity: row.equity as number,
-        },
+      const yearData = {} as Record<string, Record<string, number>>
+      for (const group of groups) {
+        const fields = INPUT_FIELDS[group] as ReadonlyArray<
+          keyof YearlyFinancialsRow
+        >
+        const groupData: Record<string, number> = {}
+        for (const field of fields) {
+          groupData[field as string] = row[field] as number
+        }
+        yearData[group] = groupData
       }
+      financials[year] = yearData as unknown as CompanyYearFinancials
     }
     return financials
   }
@@ -256,18 +239,20 @@ export class Company {
     previousState: TickerStateRow | null,
     maxEffectiveFiscalYearEnd: string | null,
     incomingCurrentPrice: number | undefined,
-  ): void {
+  ): boolean {
     const hasEffectiveYearWrite = maxEffectiveFiscalYearEnd !== null
 
     if (previousState === null) {
-      if (!hasEffectiveYearWrite && incomingCurrentPrice === undefined) return
+      if (!hasEffectiveYearWrite && incomingCurrentPrice === undefined) {
+        return false
+      }
       this.repository.insertTickerState({
         ticker,
         latestFiscalYearEnd: maxEffectiveFiscalYearEnd,
         pendingValuation: hasEffectiveYearWrite,
         currentPrice: incomingCurrentPrice ?? null,
       })
-      return
+      return hasEffectiveYearWrite
     }
 
     const patch: Partial<TickerStateRow> = {}
@@ -287,6 +272,8 @@ export class Company {
     if (Object.keys(patch).length > 0) {
       this.repository.updateTickerState(ticker, patch)
     }
+
+    return hasEffectiveYearWrite || previousState.pendingValuation
   }
 
   applyYearlyFinancialsPatch(

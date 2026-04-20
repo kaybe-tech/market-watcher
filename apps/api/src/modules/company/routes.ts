@@ -37,13 +37,10 @@ export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
         return c.json({ error: "ticker_not_found", ticker }, 404)
       }
 
+      let state = initialState
       if (initialState.pendingValuation) {
         await company.valuate(ticker)
-      }
-
-      const state = repository.getTickerState(ticker)
-      if (state === null) {
-        return c.json({ error: "ticker_not_found", ticker }, 404)
+        state = repository.getTickerState(ticker) ?? initialState
       }
 
       const latest = repository.getLatestValuation(ticker)

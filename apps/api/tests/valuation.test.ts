@@ -5,6 +5,7 @@ import { Company } from "@/modules/company/company"
 import { CompanyRepository } from "@/modules/company/repository"
 import { completeYearRow } from "./fixtures/company"
 import { amznFixture, toIngestBody } from "./fixtures/engine"
+import { completeYear } from "./fixtures/synthetic"
 
 const migrationsFolder = `${import.meta.dir}/../src/db/migrations`
 
@@ -106,12 +107,7 @@ describe("Company.valuate — datos insuficientes", () => {
     const { company, repository } = setup()
     company.ingestData("AAPL", {
       currentPrice: 180,
-      years: [
-        {
-          fiscalYearEnd: "2024-12-31",
-          ...fullEngineYear(),
-        },
-      ],
+      years: [completeYear("2024-12-31")],
     })
 
     await company.valuate("AAPL")
@@ -181,35 +177,3 @@ describe("Company.valuate — fallo del engine", () => {
     expect(errorSpy).toHaveBeenCalled()
   })
 })
-
-function fullEngineYear() {
-  return {
-    incomeStatement: {
-      sales: 100000,
-      depreciationAmortization: -5000,
-      ebit: 20000,
-      interestExpense: -500,
-      interestIncome: 100,
-      taxExpense: -4000,
-      minorityInterests: 0,
-      fullyDilutedShares: 1000,
-    },
-    freeCashFlow: {
-      capexMaintenance: -3000,
-      inventories: 2000,
-      accountsReceivable: 1500,
-      accountsPayable: 1800,
-      unearnedRevenue: 500,
-      dividendsPaid: 0,
-    },
-    roic: {
-      cashAndEquivalents: 10000,
-      marketableSecurities: 5000,
-      shortTermDebt: 1000,
-      longTermDebt: 8000,
-      currentOperatingLeases: 500,
-      nonCurrentOperatingLeases: 1500,
-      equity: 30000,
-    },
-  }
-}

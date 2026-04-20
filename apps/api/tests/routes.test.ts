@@ -1,10 +1,12 @@
 import { describe, expect, it } from "bun:test"
+import type { CompanyValuation } from "@market-watcher/valuation-engine"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { createApp } from "@/app"
 import { createDb } from "@/db"
 import { CompanyRepository } from "@/modules/company/repository"
 import { completeYearRow, fullYearPayload } from "./fixtures/company"
 import { amznFixture, toIngestBody } from "./fixtures/engine"
+import { waitForBackgroundValuation } from "./fixtures/wait"
 
 const migrationsFolder = `${import.meta.dir}/../src/db/migrations`
 
@@ -288,25 +290,6 @@ describe("POST /companies/:ticker/data - validación 400", () => {
   })
 })
 
-const waitForBackgroundValuation = async (
-  repository: CompanyRepository,
-  ticker: string,
-  {
-    timeoutMs = 2000,
-    intervalMs = 10,
-  }: { timeoutMs?: number; intervalMs?: number } = {},
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const state = repository.getTickerState(ticker)
-    if (state && !state.pendingValuation) return
-    await new Promise((r) => setTimeout(r, intervalMs))
-  }
-  throw new Error(
-    `background valuation for ${ticker} did not complete within ${timeoutMs}ms`,
-  )
-}
-
 describe("POST /companies/:ticker/data - disparo de valoración en segundo plano", () => {
   it("ingesta que deja pendiente → Flujo 2 persiste la valoración", async () => {
     const { app, repository } = setup()
@@ -329,7 +312,6 @@ describe("POST /companies/:ticker/data - disparo de valoración en segundo plano
     const res = await postIngest(app, "AAPL", { currentPrice: 120, years: [] })
     expect(res.status).toBe(200)
 
-    // Damos tiempo a que cualquier microtask pendiente corra
     await new Promise((r) => setTimeout(r, 50))
 
     expect(repository.getLatestValuation("AAPL")).toBeNull()
@@ -413,10 +395,8 @@ describe("GET /companies/:ticker", () => {
 
   it("ticker pendiente con datos suficientes → Flujo 2 corre sincrónico y responde con valuation", async () => {
     const { app, repository } = setup()
-    // Sembramos estado: 2 años completos + pending=true + currentPrice
     const body = toIngestBody(amznFixture)
     const reducedYears = body.years.slice(-2)
-    // Ingestamos vía endpoint para que el background también corra; luego forzamos pending para que el GET sincrónico valore.
     await postIngest(app, "AMZN", {
       currentPrice: body.currentPrice,
       years: reducedYears,
@@ -534,19 +514,19 @@ describe("GET /companies/:ticker", () => {
     repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
-      result: { tag: "first" } as unknown as never,
+      result: { tag: "first" } as unknown as CompanyValuation,
       createdAt: "2026-04-18T09:00:00.000Z",
     })
     const second = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
-      result: { tag: "second" } as unknown as never,
+      result: { tag: "second" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
     })
     const third = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
-      result: { tag: "third" } as unknown as never,
+      result: { tag: "third" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
     })
 

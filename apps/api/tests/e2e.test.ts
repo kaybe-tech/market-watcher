@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test"
+import type { CompanyValuation } from "@market-watcher/valuation-engine"
 import { isClose } from "@market-watcher/valuation-engine/tests/helpers/fixtures"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { createApp } from "@/app"
@@ -17,6 +18,7 @@ import {
   completeYear,
   incompleteYear,
 } from "./fixtures/synthetic"
+import { waitForBackgroundValuation } from "./fixtures/wait"
 
 const migrationsFolder = `${import.meta.dir}/../src/db/migrations`
 
@@ -39,25 +41,6 @@ const postIngest = (app: AppInstance, ticker: string, body: IngestBody) =>
 
 const getCompany = (app: AppInstance, ticker: string) =>
   app.request(`/companies/${ticker}`)
-
-const waitForBackgroundValuation = async (
-  repository: CompanyRepository,
-  ticker: string,
-  {
-    timeoutMs = 3000,
-    intervalMs = 10,
-  }: { timeoutMs?: number; intervalMs?: number } = {},
-): Promise<void> => {
-  const deadline = Date.now() + timeoutMs
-  while (Date.now() < deadline) {
-    const state = repository.getTickerState(ticker)
-    if (state && !state.pendingValuation) return
-    await new Promise((r) => setTimeout(r, intervalMs))
-  }
-  throw new Error(
-    `background valuation for ${ticker} did not complete within ${timeoutMs}ms`,
-  )
-}
 
 const assertCloseDeep = (actual: unknown, expected: unknown, path = "root") => {
   if (
@@ -208,8 +191,6 @@ describe("E2E criterio 5 — año posterior dispara recálculo sin borrar histor
     const valuationsAfterFirst = repository.listValuationsForTicker("AMZN")
     expect(valuationsAfterFirst).toHaveLength(1)
 
-    // Nuevo año posterior sintético consistente (valores realistas no importan porque el engine
-    // ya validó el historial real; agregamos un año completo con shape correcto).
     await new Promise((r) => setTimeout(r, 5))
     await postIngest(app, "AMZN", buildIngestBody([completeYear("2026-12-31")]))
     await waitForBackgroundValuation(repository, "AMZN")
@@ -236,19 +217,19 @@ describe("E2E criterio 6 — GET devuelve la última valoración", () => {
     repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
-      result: { tag: "older" } as unknown as never,
+      result: { tag: "older" } as unknown as CompanyValuation,
       createdAt: "2026-04-18T10:00:00.000Z",
     })
     repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
-      result: { tag: "tie-earlier" } as unknown as never,
+      result: { tag: "tie-earlier" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
     })
     const winner = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
-      result: { tag: "winner" } as unknown as never,
+      result: { tag: "winner" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
     })
 
@@ -270,7 +251,6 @@ describe("E2E — ingesta incremental (troceado por año)", () => {
     for (const chunk of chunks) {
       await postIngest(app, "AMZN", chunk)
     }
-    // Enviar currentPrice al final dispara el background
     await postIngest(app, "AMZN", {
       currentPrice: amznFixture.inputs.currentPrice,
       years: [],
