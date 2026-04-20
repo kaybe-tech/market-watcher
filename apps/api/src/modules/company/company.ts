@@ -3,7 +3,11 @@ import {
   type CompanyYearFinancials,
 } from "@market-watcher/valuation-engine"
 import type { CompanyRepository } from "./repository"
-import type { TickerStateRow, YearlyFinancialsRow } from "./schema"
+import type {
+  TickerStateRow,
+  ValuationRow,
+  YearlyFinancialsRow,
+} from "./schema"
 
 const INPUT_FIELDS = {
   incomeStatement: [
@@ -82,19 +86,11 @@ export type IngestResult = {
   pendingValuation: boolean
 }
 
-export type CompanyViewValuation = {
-  id: number
-  ticker: string
-  fiscalYearEnd: string
-  createdAt: string
-  result: CompanyValuation
-}
-
 export type CompanyView = {
   ticker: string
   latestFiscalYearEnd: string | null
   currentPrice: number | null
-  valuation: CompanyViewValuation | null
+  valuation: ValuationRow | null
   pending: boolean
   valuationInProgress: boolean
   missing?: MissingSummary
@@ -155,22 +151,13 @@ export class Company {
       state = this.repository.getTickerState(ticker) ?? initialState
     }
 
-    const latest = this.repository.getLatestValuation(ticker)
     const view: CompanyView = {
       ticker,
       latestFiscalYearEnd: state.latestFiscalYearEnd,
       currentPrice: state.currentPrice,
-      valuation: latest
-        ? {
-            id: latest.id,
-            ticker: latest.ticker,
-            fiscalYearEnd: latest.fiscalYearEnd,
-            createdAt: latest.createdAt,
-            result: latest.result,
-          }
-        : null,
+      valuation: this.repository.getLatestValuation(ticker),
       pending: state.pendingValuation,
-      valuationInProgress: this.inProgressTickers.has(ticker),
+      valuationInProgress: this.hasValuationInProgress(ticker),
     }
 
     if (state.pendingValuation) {
