@@ -7,8 +7,7 @@ import { ingestBodySchema, tickerParamSchema } from "./validators"
 
 export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
   const routes = new Hono()
-  const repository = new CompanyRepository(db)
-  const company = new Company(repository)
+  const company = new Company(new CompanyRepository(db))
 
   routes.post(
     "/companies/:ticker/data",
@@ -32,55 +31,11 @@ export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
     sValidator("param", tickerParamSchema),
     async (c) => {
       const { ticker } = c.req.valid("param")
-      const initialState = repository.getTickerState(ticker)
-      if (initialState === null) {
+      const view = await company.getCompanyView(ticker)
+      if (view === null) {
         return c.json({ error: "ticker_not_found", ticker }, 404)
       }
-
-      let state = initialState
-      if (initialState.pendingValuation) {
-        await company.valuate(ticker)
-        state = repository.getTickerState(ticker) ?? initialState
-      }
-
-      const latest = repository.getLatestValuation(ticker)
-      const body: {
-        ticker: string
-        latestFiscalYearEnd: string | null
-        currentPrice: number | null
-        valuation: {
-          id: number
-          ticker: string
-          fiscalYearEnd: string
-          createdAt: string
-          result: unknown
-        } | null
-        pending: boolean
-        valuationInProgress: boolean
-        missing?: ReturnType<Company["consolidateMissing"]>
-      } = {
-        ticker,
-        latestFiscalYearEnd: state.latestFiscalYearEnd,
-        currentPrice: state.currentPrice,
-        valuation: latest
-          ? {
-              id: latest.id,
-              ticker: latest.ticker,
-              fiscalYearEnd: latest.fiscalYearEnd,
-              createdAt: latest.createdAt,
-              result: latest.result,
-            }
-          : null,
-        pending: state.pendingValuation,
-        valuationInProgress: company.hasValuationInProgress(ticker),
-      }
-
-      if (state.pendingValuation) {
-        const rows = repository.listYearlyFinancialsForTicker(ticker)
-        body.missing = company.consolidateMissing(state, rows)
-      }
-
-      return c.json(body)
+      return c.json(view)
     },
   )
 

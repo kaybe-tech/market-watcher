@@ -82,6 +82,24 @@ export type IngestResult = {
   pendingValuation: boolean
 }
 
+export type CompanyViewValuation = {
+  id: number
+  ticker: string
+  fiscalYearEnd: string
+  createdAt: string
+  result: CompanyValuation
+}
+
+export type CompanyView = {
+  ticker: string
+  latestFiscalYearEnd: string | null
+  currentPrice: number | null
+  valuation: CompanyViewValuation | null
+  pending: boolean
+  valuationInProgress: boolean
+  missing?: MissingSummary
+}
+
 const MIN_CONSECUTIVE_YEARS_FOR_VALUATION = 2
 
 const previousFiscalYearEnd = (fiscalYearEnd: string): string => {
@@ -125,6 +143,42 @@ export class Company {
 
   hasValuationInProgress(ticker: string): boolean {
     return this.inProgressTickers.has(ticker)
+  }
+
+  async getCompanyView(ticker: string): Promise<CompanyView | null> {
+    const initialState = this.repository.getTickerState(ticker)
+    if (initialState === null) return null
+
+    let state = initialState
+    if (initialState.pendingValuation) {
+      await this.valuate(ticker)
+      state = this.repository.getTickerState(ticker) ?? initialState
+    }
+
+    const latest = this.repository.getLatestValuation(ticker)
+    const view: CompanyView = {
+      ticker,
+      latestFiscalYearEnd: state.latestFiscalYearEnd,
+      currentPrice: state.currentPrice,
+      valuation: latest
+        ? {
+            id: latest.id,
+            ticker: latest.ticker,
+            fiscalYearEnd: latest.fiscalYearEnd,
+            createdAt: latest.createdAt,
+            result: latest.result,
+          }
+        : null,
+      pending: state.pendingValuation,
+      valuationInProgress: this.inProgressTickers.has(ticker),
+    }
+
+    if (state.pendingValuation) {
+      const rows = this.repository.listYearlyFinancialsForTicker(ticker)
+      view.missing = this.consolidateMissing(state, rows)
+    }
+
+    return view
   }
 
   async valuate(ticker: string): Promise<void> {
