@@ -16,6 +16,10 @@ export class CompanyRepository {
     this.db = db
   }
 
+  runInTransaction<T>(fn: () => T): T {
+    return this.db.transaction(fn)
+  }
+
   getTickerState(ticker: string): TickerStateRow | null {
     const [row] = this.db
       .select()

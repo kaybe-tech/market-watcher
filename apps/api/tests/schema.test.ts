@@ -107,6 +107,22 @@ describe("ticker_state", () => {
     const [fetched] = db.select().from(tickerState).all()
     expect(fetched?.currentPrice).toBeNull()
   })
+
+  it("acepta latest_fiscal_year_end nulo", () => {
+    const db = setup()
+    db.insert(tickerState)
+      .values({
+        ticker: "AAPL",
+        latestFiscalYearEnd: null,
+        pendingValuation: false,
+        currentPrice: 150,
+      })
+      .run()
+
+    const [fetched] = db.select().from(tickerState).all()
+    expect(fetched?.latestFiscalYearEnd).toBeNull()
+    expect(fetched?.currentPrice).toBe(150)
+  })
 })
 
 describe("valuations", () => {

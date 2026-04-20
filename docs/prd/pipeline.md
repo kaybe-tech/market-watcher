@@ -77,7 +77,7 @@ Describe cómo el servicio procesa una ingesta de datos financieros para un tick
 
 2. El servicio persiste los datos para cada año presente en el envío, aplicando inmutabilidad a nivel de campo: un campo que ya tiene valor no se sobreescribe.
 
-3. Si alguno de los años aportados es posterior al último año fiscal registrado para este ticker (o si es la primera vez que se ve este ticker), el servicio actualiza ese valor en el estado del ticker. Re-ingestas de años ya registrados no alteran este valor. Si el envío incluye `currentPrice`, el servicio actualiza ese valor en el estado del ticker.
+3. Si alguno de los años aportados es posterior al último año fiscal registrado para este ticker (o si es la primera vez que se ve este ticker, o el último año fiscal registrado era desconocido), el servicio actualiza ese valor en el estado del ticker. Re-ingestas de años ya registrados no alteran este valor. Si el envío incluye `currentPrice`, el servicio actualiza ese valor en el estado del ticker. Si es la primera vez que se ve el ticker, se registra su estado con los valores disponibles; el último año fiscal puede quedar sin valor cuando la primera ingesta no trae años con datos efectivos.
 
 4. Si el envío produjo al menos una escritura efectiva (algún campo que estaba null pasó a tener valor, o se creó un año nuevo), el servicio marca al ticker como pendiente de valorizar. Actualizar `currentPrice` no cuenta como escritura efectiva a estos efectos.
 
@@ -211,7 +211,7 @@ Plano de control del ticker. Una fila por ticker; se actualiza con cada ingesta.
 
 - Clave única: `ticker`.
 - Campos:
-  - `latestFiscalYearEnd`: el año fiscal más reciente observado en los datos financieros del ticker.
+  - `latestFiscalYearEnd`: el año fiscal más reciente observado en los datos financieros del ticker. `null` hasta que llegue una ingesta con un año de datos efectivos.
   - `pendingValuation`: bandera que indica si el ticker tiene una valoración pendiente de cálculo.
   - `currentPrice`: último precio observado en alguna ingesta del ticker. `null` si todavía no se ha enviado ninguno.
 
@@ -226,7 +226,7 @@ Registros append-only. Cada ejecución exitosa del engine produce un nuevo regis
   - `result`: versión JSON de los datos producidos por `CompanyValuation` del paquete `valuation-engine` (proyecciones, múltiplos, precio objetivo, margen de seguridad, CAGR, precio de compra, y el resto del output del engine).
   - `createdAt`: timestamp del cálculo generado server-side en formato ISO 8601 UTC (p. ej. `2026-04-18T14:23:45.000Z`).
 
-La serialización completa de un registro de esta entidad corresponde al tipo `ValuationResult` que retorna `GET /valuation/:ticker`, con `result` anidado:
+La serialización completa de un registro de esta entidad corresponde al tipo `ValuationResult` que retorna `GET /companies/:ticker`, con `result` anidado:
 
 ```
 {
@@ -250,7 +250,7 @@ Cuando hay múltiples registros de `Valuation` para el mismo ticker, el "más re
 Además del estado persistido en SQLite, el servicio mantiene un registro en memoria de los tickers que tienen una ejecución del **Flujo 2** en curso. Este registro cumple dos funciones:
 
 - **Descarte de invocaciones redundantes**: si un trigger del Flujo 2 se dispara para un ticker que ya tiene una ejecución activa, la nueva invocación se descarta sin ejecutar el engine (Flujo 2 paso 1).
-- **Exposición del estado al cliente**: alimenta el campo `valuationInProgress` de la respuesta del endpoint `GET /valuation/:ticker`.
+- **Exposición del estado al cliente**: alimenta el campo `valuationInProgress` de la respuesta del endpoint `GET /companies/:ticker`.
 
 El registro no se persiste: su ciclo de vida coincide con el del proceso del servicio. Si el proceso reinicia durante una ejecución del Flujo 2, el registro in-memory se pierde; el ticker queda en su estado persistido (normalmente `pendingValuation = true`) y la valoración se reintenta en la próxima ingesta o consulta que lo encuentre pendiente.
 
@@ -270,7 +270,7 @@ type ValuationResult = {
 }
 ```
 
-#### POST /data/ticker/:ticker
+#### POST /companies/:ticker/data
 
 Recibe los datos financieros de una empresa desde un cliente. El servicio es agnóstico al origen: acepta campos del engine sin conocer de qué fuente provienen.
 
@@ -340,9 +340,9 @@ Sin información sobre resultado de valoración o campos faltantes (eso vive en 
 - `400 Bad Request`: body mal formado (campos desconocidos, tipos incorrectos, `fiscalYearEnd` no parseable).
 - `500 Internal Server Error`: fallo de persistencia.
 
-#### GET /valuation/:ticker
+#### GET /companies/:ticker
 
-Devuelve la valoración del ticker y, si sigue pendiente tras el intento sincrónico, qué campos faltan para poder valorizar.
+Devuelve el estado del ticker junto con la valoración vigente y, si sigue pendiente tras el intento sincrónico, qué campos faltan para poder valorizar.
 
 **Path params:**
 - `ticker`: símbolo de la empresa.
@@ -354,7 +354,7 @@ Devuelve la valoración del ticker y, si sigue pendiente tras el intento sincró
 ```
 {
   ticker: string,
-  latestFiscalYearEnd: "YYYY-MM-DD",
+  latestFiscalYearEnd: "YYYY-MM-DD" | null,
   currentPrice: number | null,
   valuation: ValuationResult | null,
   pending: boolean,
