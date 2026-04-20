@@ -111,4 +111,13 @@ export class CompanyRepository {
       .all()
     return row ?? null
   }
+
+  listValuationsForTicker(ticker: string): ValuationRow[] {
+    return this.db
+      .select()
+      .from(valuations)
+      .where(eq(valuations.ticker, ticker))
+      .orderBy(desc(valuations.createdAt), desc(valuations.id))
+      .all()
+  }
 }

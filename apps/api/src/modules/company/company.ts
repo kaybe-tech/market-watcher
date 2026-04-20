@@ -1,5 +1,13 @@
+import {
+  CompanyValuation,
+  type CompanyYearFinancials,
+} from "@market-watcher/valuation-engine"
 import type { CompanyRepository } from "./repository"
-import type { TickerStateRow, YearlyFinancialsRow } from "./schema"
+import type {
+  TickerStateRow,
+  ValuationRow,
+  YearlyFinancialsRow,
+} from "./schema"
 
 const INPUT_FIELDS = {
   incomeStatement: [
@@ -74,6 +82,22 @@ export type ApplyPatchResult = {
   isNewYear: boolean
 }
 
+export type IngestResult = {
+  pendingValuation: boolean
+}
+
+export type CompanyView = {
+  ticker: string
+  latestFiscalYearEnd: string | null
+  currentPrice: number | null
+  valuation: ValuationRow | null
+  pending: boolean
+  valuationInProgress: boolean
+  missing?: MissingSummary
+}
+
+const MIN_CONSECUTIVE_YEARS_FOR_VALUATION = 2
+
 const previousFiscalYearEnd = (fiscalYearEnd: string): string => {
   const year = Number.parseInt(fiscalYearEnd.slice(0, 4), 10)
   return `${year - 1}${fiscalYearEnd.slice(4)}`
@@ -81,13 +105,14 @@ const previousFiscalYearEnd = (fiscalYearEnd: string): string => {
 
 export class Company {
   private readonly repository: CompanyRepository
+  private readonly inProgressTickers: Set<string> = new Set()
 
   constructor(repository: CompanyRepository) {
     this.repository = repository
   }
 
-  ingestData(ticker: string, payload: IngestPayload): void {
-    this.repository.runInTransaction(() => {
+  ingestData(ticker: string, payload: IngestPayload): IngestResult {
+    return this.repository.runInTransaction(() => {
       const previousState = this.repository.getTickerState(ticker)
       const existingYears = new Map(
         this.repository
@@ -101,13 +126,115 @@ export class Company {
         existingYears,
       )
 
-      this.resolveTickerState(
+      const pendingValuation = this.resolveTickerState(
         ticker,
         previousState,
         maxEffectiveFiscalYearEnd,
         payload.currentPrice,
       )
+
+      return { pendingValuation }
     })
+  }
+
+  hasValuationInProgress(ticker: string): boolean {
+    return this.inProgressTickers.has(ticker)
+  }
+
+  async getCompanyView(ticker: string): Promise<CompanyView | null> {
+    const initialState = this.repository.getTickerState(ticker)
+    if (initialState === null) return null
+
+    let state = initialState
+    if (initialState.pendingValuation) {
+      await this.valuate(ticker)
+      state = this.repository.getTickerState(ticker) ?? initialState
+    }
+
+    const view: CompanyView = {
+      ticker,
+      latestFiscalYearEnd: state.latestFiscalYearEnd,
+      currentPrice: state.currentPrice,
+      valuation: this.repository.getLatestValuation(ticker),
+      pending: state.pendingValuation,
+      valuationInProgress: this.hasValuationInProgress(ticker),
+    }
+
+    if (state.pendingValuation) {
+      const rows = this.repository.listYearlyFinancialsForTicker(ticker)
+      view.missing = this.consolidateMissing(state, rows)
+    }
+
+    return view
+  }
+
+  async valuate(ticker: string): Promise<void> {
+    if (this.inProgressTickers.has(ticker)) return
+    this.inProgressTickers.add(ticker)
+    try {
+      await Promise.resolve()
+      this.runValuation(ticker)
+    } finally {
+      this.inProgressTickers.delete(ticker)
+    }
+  }
+
+  private runValuation(ticker: string): void {
+    const state = this.repository.getTickerState(ticker)
+    if (!state || state.latestFiscalYearEnd === null) return
+    if (state.currentPrice === null) return
+
+    const rows = this.repository.listYearlyFinancialsForTicker(ticker)
+    const series = this.consolidateConsecutiveYears(
+      rows,
+      state.latestFiscalYearEnd,
+    )
+    if (series.length < MIN_CONSECUTIVE_YEARS_FOR_VALUATION) return
+
+    const financials = this.buildEngineFinancials(series)
+
+    let valuation: CompanyValuation
+    try {
+      valuation = new CompanyValuation({
+        ticker,
+        currentPrice: state.currentPrice,
+        financials,
+      })
+    } catch (err) {
+      console.error(`valuation engine failed for ${ticker}:`, err)
+      return
+    }
+
+    this.repository.insertValuation({
+      ticker,
+      fiscalYearEnd: state.latestFiscalYearEnd,
+      result: valuation,
+      createdAt: new Date().toISOString(),
+    })
+    this.repository.updateTickerState(ticker, { pendingValuation: false })
+  }
+
+  private buildEngineFinancials(
+    series: YearlyFinancialsRow[],
+  ): Record<number, CompanyYearFinancials> {
+    const groups = ["incomeStatement", "freeCashFlow", "roic"] as const
+    const financials: Record<number, CompanyYearFinancials> = {}
+    for (const row of series) {
+      const year = Number.parseInt(row.fiscalYearEnd.slice(0, 4), 10)
+      const yearData = {} as Record<string, Record<string, number>>
+      for (const group of groups) {
+        const fields = INPUT_FIELDS[group] as ReadonlyArray<
+          keyof YearlyFinancialsRow
+        >
+        const groupData: Record<string, number> = {}
+        for (const field of fields) {
+          groupData[field as string] = row[field] as number
+        }
+        yearData[group] = groupData
+      }
+      financials[year] = yearData as unknown as CompanyYearFinancials
+    }
+    return financials
   }
 
   private persistYearPatches(
@@ -153,18 +280,20 @@ export class Company {
     previousState: TickerStateRow | null,
     maxEffectiveFiscalYearEnd: string | null,
     incomingCurrentPrice: number | undefined,
-  ): void {
+  ): boolean {
     const hasEffectiveYearWrite = maxEffectiveFiscalYearEnd !== null
 
     if (previousState === null) {
-      if (!hasEffectiveYearWrite && incomingCurrentPrice === undefined) return
+      if (!hasEffectiveYearWrite && incomingCurrentPrice === undefined) {
+        return false
+      }
       this.repository.insertTickerState({
         ticker,
         latestFiscalYearEnd: maxEffectiveFiscalYearEnd,
         pendingValuation: hasEffectiveYearWrite,
         currentPrice: incomingCurrentPrice ?? null,
       })
-      return
+      return hasEffectiveYearWrite
     }
 
     const patch: Partial<TickerStateRow> = {}
@@ -184,6 +313,8 @@ export class Company {
     if (Object.keys(patch).length > 0) {
       this.repository.updateTickerState(ticker, patch)
     }
+
+    return hasEffectiveYearWrite || previousState.pendingValuation
   }
 
   applyYearlyFinancialsPatch(
