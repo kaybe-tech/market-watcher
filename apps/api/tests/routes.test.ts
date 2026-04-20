@@ -4,6 +4,7 @@ import { createApp } from "@/app"
 import { createDb } from "@/db"
 import { CompanyRepository } from "@/modules/company/repository"
 import { completeYearRow, fullYearPayload } from "./fixtures/company"
+import { amznFixture, toIngestBody } from "./fixtures/engine"
 
 const migrationsFolder = `${import.meta.dir}/../src/db/migrations`
 
@@ -284,6 +285,55 @@ describe("POST /companies/:ticker/data - validación 400", () => {
       years: [{ fiscalYearEnd: "2024-13-40" }],
     })
     expect(res.status).toBe(400)
+  })
+})
+
+const waitForBackgroundValuation = async (
+  repository: CompanyRepository,
+  ticker: string,
+  {
+    timeoutMs = 2000,
+    intervalMs = 10,
+  }: { timeoutMs?: number; intervalMs?: number } = {},
+): Promise<void> => {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const state = repository.getTickerState(ticker)
+    if (state && !state.pendingValuation) return
+    await new Promise((r) => setTimeout(r, intervalMs))
+  }
+  throw new Error(
+    `background valuation for ${ticker} did not complete within ${timeoutMs}ms`,
+  )
+}
+
+describe("POST /companies/:ticker/data - disparo de valoración en segundo plano", () => {
+  it("ingesta que deja pendiente → Flujo 2 persiste la valoración", async () => {
+    const { app, repository } = setup()
+
+    const res = await postIngest(app, "AMZN", toIngestBody(amznFixture))
+    expect(res.status).toBe(200)
+
+    await waitForBackgroundValuation(repository, "AMZN")
+
+    const latest = repository.getLatestValuation("AMZN")
+    expect(latest).not.toBeNull()
+    expect(latest?.fiscalYearEnd).toBe("2025-12-31")
+    expect(repository.getTickerState("AMZN")?.pendingValuation).toBe(false)
+  })
+
+  it("ingesta que no deja pendiente (solo currentPrice sin cambios efectivos) → no dispara Flujo 2", async () => {
+    const { app, repository } = setup()
+    seedTickerState(repository, { pendingValuation: false, currentPrice: 100 })
+
+    const res = await postIngest(app, "AAPL", { currentPrice: 120, years: [] })
+    expect(res.status).toBe(200)
+
+    // Damos tiempo a que cualquier microtask pendiente corra
+    await new Promise((r) => setTimeout(r, 50))
+
+    expect(repository.getLatestValuation("AAPL")).toBeNull()
+    expect(repository.getTickerState("AAPL")?.pendingValuation).toBe(false)
   })
 })
 

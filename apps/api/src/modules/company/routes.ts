@@ -16,7 +16,12 @@ export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
     (c) => {
       const { ticker } = c.req.valid("param")
       const body = c.req.valid("json")
-      company.ingestData(ticker, body)
+      const result = company.ingestData(ticker, body)
+      if (result.pendingValuation) {
+        void company.valuate(ticker).catch((err) => {
+          console.error(`background valuation failed for ${ticker}:`, err)
+        })
+      }
       return c.json({ success: true })
     },
   )

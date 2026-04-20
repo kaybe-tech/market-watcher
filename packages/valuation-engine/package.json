@@ -4,7 +4,12 @@
   "private": true,
   "main": "src/index.ts",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./tests/fixtures/amzn": "./tests/fixtures/amzn.ts",
+    "./tests/fixtures/cost": "./tests/fixtures/cost.ts",
+    "./tests/fixtures/nke": "./tests/fixtures/nke.ts",
+    "./tests/fixtures/nvda": "./tests/fixtures/nvda.ts",
+    "./tests/helpers/fixtures": "./tests/helpers/fixtures.ts"
   },
   "scripts": {
     "build": "tsc -p tsconfig.build.json",

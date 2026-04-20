@@ -1,3 +1,7 @@
+import {
+  CompanyValuation,
+  type CompanyYearFinancials,
+} from "@market-watcher/valuation-engine"
 import type { CompanyRepository } from "./repository"
 import type { TickerStateRow, YearlyFinancialsRow } from "./schema"
 
@@ -74,6 +78,12 @@ export type ApplyPatchResult = {
   isNewYear: boolean
 }
 
+export type IngestResult = {
+  pendingValuation: boolean
+}
+
+const MIN_CONSECUTIVE_YEARS_FOR_VALUATION = 2
+
 const previousFiscalYearEnd = (fiscalYearEnd: string): string => {
   const year = Number.parseInt(fiscalYearEnd.slice(0, 4), 10)
   return `${year - 1}${fiscalYearEnd.slice(4)}`
@@ -81,13 +91,14 @@ const previousFiscalYearEnd = (fiscalYearEnd: string): string => {
 
 export class Company {
   private readonly repository: CompanyRepository
+  private readonly inProgressTickers: Set<string> = new Set()
 
   constructor(repository: CompanyRepository) {
     this.repository = repository
   }
 
-  ingestData(ticker: string, payload: IngestPayload): void {
-    this.repository.runInTransaction(() => {
+  ingestData(ticker: string, payload: IngestPayload): IngestResult {
+    return this.repository.runInTransaction(() => {
       const previousState = this.repository.getTickerState(ticker)
       const existingYears = new Map(
         this.repository
@@ -107,7 +118,99 @@ export class Company {
         maxEffectiveFiscalYearEnd,
         payload.currentPrice,
       )
+
+      const finalState = this.repository.getTickerState(ticker)
+      return { pendingValuation: finalState?.pendingValuation ?? false }
     })
+  }
+
+  hasValuationInProgress(ticker: string): boolean {
+    return this.inProgressTickers.has(ticker)
+  }
+
+  async valuate(ticker: string): Promise<void> {
+    if (this.inProgressTickers.has(ticker)) return
+    this.inProgressTickers.add(ticker)
+    try {
+      await Promise.resolve()
+      this.runValuation(ticker)
+    } finally {
+      this.inProgressTickers.delete(ticker)
+    }
+  }
+
+  private runValuation(ticker: string): void {
+    const state = this.repository.getTickerState(ticker)
+    if (!state || state.latestFiscalYearEnd === null) return
+    if (state.currentPrice === null) return
+
+    const rows = this.repository.listYearlyFinancialsForTicker(ticker)
+    const series = this.consolidateConsecutiveYears(
+      rows,
+      state.latestFiscalYearEnd,
+    )
+    if (series.length < MIN_CONSECUTIVE_YEARS_FOR_VALUATION) return
+
+    const financials = this.buildEngineFinancials(series)
+
+    let valuation: CompanyValuation
+    try {
+      valuation = new CompanyValuation({
+        ticker,
+        currentPrice: state.currentPrice,
+        financials,
+      })
+    } catch (err) {
+      console.error(`valuation engine failed for ${ticker}:`, err)
+      return
+    }
+
+    this.repository.insertValuation({
+      ticker,
+      fiscalYearEnd: state.latestFiscalYearEnd,
+      result: valuation,
+      createdAt: new Date().toISOString(),
+    })
+    this.repository.updateTickerState(ticker, { pendingValuation: false })
+  }
+
+  private buildEngineFinancials(
+    series: YearlyFinancialsRow[],
+  ): Record<number, CompanyYearFinancials> {
+    const financials: Record<number, CompanyYearFinancials> = {}
+    for (const row of series) {
+      const year = Number.parseInt(row.fiscalYearEnd.slice(0, 4), 10)
+      financials[year] = {
+        incomeStatement: {
+          sales: row.sales as number,
+          depreciationAmortization: row.depreciationAmortization as number,
+          ebit: row.ebit as number,
+          interestExpense: row.interestExpense as number,
+          interestIncome: row.interestIncome as number,
+          taxExpense: row.taxExpense as number,
+          minorityInterests: row.minorityInterests as number,
+          fullyDilutedShares: row.fullyDilutedShares as number,
+        },
+        freeCashFlow: {
+          capexMaintenance: row.capexMaintenance as number,
+          inventories: row.inventories as number,
+          accountsReceivable: row.accountsReceivable as number,
+          accountsPayable: row.accountsPayable as number,
+          unearnedRevenue: row.unearnedRevenue as number,
+          dividendsPaid: row.dividendsPaid as number,
+        },
+        roic: {
+          cashAndEquivalents: row.cashAndEquivalents as number,
+          marketableSecurities: row.marketableSecurities as number,
+          shortTermDebt: row.shortTermDebt as number,
+          longTermDebt: row.longTermDebt as number,
+          currentOperatingLeases: row.currentOperatingLeases as number,
+          nonCurrentOperatingLeases: row.nonCurrentOperatingLeases as number,
+          equity: row.equity as number,
+        },
+      }
+    }
+    return financials
   }
 
   private persistYearPatches(
