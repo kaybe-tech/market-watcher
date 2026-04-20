@@ -75,7 +75,11 @@ export const ingestBodySchema = v.pipe(
 )
 
 export const tickerParamSchema = v.object({
-  ticker: v.pipe(v.string(), v.minLength(1, "ticker must not be empty")),
+  ticker: v.pipe(
+    v.string(),
+    v.minLength(1, "ticker must not be empty"),
+    v.transform((value) => value.toUpperCase()),
+  ),
 })
 
 export type IngestBodyInput = v.InferInput<typeof ingestBodySchema>

@@ -43,7 +43,7 @@ export const yearlyFinancials = sqliteTable(
 
 export const tickerState = sqliteTable("ticker_state", {
   ticker: text("ticker").primaryKey(),
-  latestFiscalYearEnd: text("latest_fiscal_year_end").notNull(),
+  latestFiscalYearEnd: text("latest_fiscal_year_end"),
   pendingValuation: integer("pending_valuation", { mode: "boolean" })
     .notNull()
     .default(true),

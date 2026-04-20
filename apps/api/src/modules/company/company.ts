@@ -44,6 +44,17 @@ export type IncomingYearlyFinancials = {
   roic?: Partial<Record<RoicField, number>>
 }
 
+export type IngestPayload = {
+  currentPrice?: number
+  years: IncomingYearlyFinancials[]
+}
+
+const EMPTY_YEARLY_FINANCIALS = Object.fromEntries(
+  Object.values(INPUT_FIELDS)
+    .flat()
+    .map((field) => [field, null]),
+) as Omit<YearlyFinancialsRow, "ticker" | "fiscalYearEnd">
+
 export type MissingYearGroups = {
   incomeStatement?: string[]
   freeCashFlow?: string[]
@@ -73,6 +84,106 @@ export class Company {
 
   constructor(repository: CompanyRepository) {
     this.repository = repository
+  }
+
+  ingestData(ticker: string, payload: IngestPayload): void {
+    this.repository.runInTransaction(() => {
+      const previousState = this.repository.getTickerState(ticker)
+      const existingYears = new Map(
+        this.repository
+          .listYearlyFinancialsForTicker(ticker)
+          .map((row) => [row.fiscalYearEnd, row]),
+      )
+
+      const maxEffectiveFiscalYearEnd = this.persistYearPatches(
+        ticker,
+        payload.years,
+        existingYears,
+      )
+
+      this.resolveTickerState(
+        ticker,
+        previousState,
+        maxEffectiveFiscalYearEnd,
+        payload.currentPrice,
+      )
+    })
+  }
+
+  private persistYearPatches(
+    ticker: string,
+    incomingYears: IncomingYearlyFinancials[],
+    existingYears: Map<string, YearlyFinancialsRow>,
+  ): string | null {
+    let maxEffectiveFiscalYearEnd: string | null = null
+
+    for (const incomingYear of incomingYears) {
+      const current = existingYears.get(incomingYear.fiscalYearEnd) ?? null
+      const result = this.applyYearlyFinancialsPatch(current, incomingYear)
+      if (!result.hasWrites) continue
+
+      if (result.isNewYear) {
+        this.repository.insertYearlyFinancials({
+          ticker,
+          fiscalYearEnd: incomingYear.fiscalYearEnd,
+          ...EMPTY_YEARLY_FINANCIALS,
+          ...result.patch,
+        })
+      } else {
+        this.repository.updateYearlyFinancials(
+          ticker,
+          incomingYear.fiscalYearEnd,
+          result.patch,
+        )
+      }
+
+      if (
+        maxEffectiveFiscalYearEnd === null ||
+        incomingYear.fiscalYearEnd > maxEffectiveFiscalYearEnd
+      ) {
+        maxEffectiveFiscalYearEnd = incomingYear.fiscalYearEnd
+      }
+    }
+
+    return maxEffectiveFiscalYearEnd
+  }
+
+  private resolveTickerState(
+    ticker: string,
+    previousState: TickerStateRow | null,
+    maxEffectiveFiscalYearEnd: string | null,
+    incomingCurrentPrice: number | undefined,
+  ): void {
+    const hasEffectiveYearWrite = maxEffectiveFiscalYearEnd !== null
+
+    if (previousState === null) {
+      if (!hasEffectiveYearWrite && incomingCurrentPrice === undefined) return
+      this.repository.insertTickerState({
+        ticker,
+        latestFiscalYearEnd: maxEffectiveFiscalYearEnd,
+        pendingValuation: hasEffectiveYearWrite,
+        currentPrice: incomingCurrentPrice ?? null,
+      })
+      return
+    }
+
+    const patch: Partial<TickerStateRow> = {}
+    if (
+      maxEffectiveFiscalYearEnd !== null &&
+      (previousState.latestFiscalYearEnd === null ||
+        maxEffectiveFiscalYearEnd > previousState.latestFiscalYearEnd)
+    ) {
+      patch.latestFiscalYearEnd = maxEffectiveFiscalYearEnd
+    }
+    if (incomingCurrentPrice !== undefined) {
+      patch.currentPrice = incomingCurrentPrice
+    }
+    if (hasEffectiveYearWrite) {
+      patch.pendingValuation = true
+    }
+    if (Object.keys(patch).length > 0) {
+      this.repository.updateTickerState(ticker, patch)
+    }
   }
 
   applyYearlyFinancialsPatch(
@@ -106,8 +217,10 @@ export class Company {
 
   consolidateConsecutiveYears(
     rows: YearlyFinancialsRow[],
-    latestFiscalYearEnd: string,
+    latestFiscalYearEnd: string | null,
   ): YearlyFinancialsRow[] {
+    if (latestFiscalYearEnd === null) return []
+
     const byFiscalYearEnd = new Map<string, YearlyFinancialsRow>()
     for (const row of rows) {
       byFiscalYearEnd.set(row.fiscalYearEnd, row)

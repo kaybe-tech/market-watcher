@@ -3,10 +3,7 @@ import type { CompanyValuation } from "@market-watcher/valuation-engine"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { createDb } from "@/db"
 import { CompanyRepository } from "@/modules/company/repository"
-import type {
-  TickerStateRow,
-  YearlyFinancialsRow,
-} from "@/modules/company/schema"
+import { completeYearRow, tickerStateRow } from "./fixtures/company"
 
 const migrationsFolder = `${import.meta.dir}/../src/db/migrations`
 
@@ -16,47 +13,9 @@ const setup = () => {
   return new CompanyRepository(db)
 }
 
-const yfRow = (
-  ticker: string,
-  fiscalYearEnd: string,
-  overrides: Partial<YearlyFinancialsRow> = {},
-): YearlyFinancialsRow => ({
-  ticker,
-  fiscalYearEnd,
-  sales: 100,
-  depreciationAmortization: 10,
-  ebit: 50,
-  interestExpense: 5,
-  interestIncome: 2,
-  taxExpense: 8,
-  minorityInterests: 0,
-  fullyDilutedShares: 1000,
-  capexMaintenance: 15,
-  inventories: 20,
-  accountsReceivable: 30,
-  accountsPayable: 25,
-  unearnedRevenue: 5,
-  dividendsPaid: 10,
-  cashAndEquivalents: 40,
-  marketableSecurities: 10,
-  shortTermDebt: 5,
-  longTermDebt: 30,
-  currentOperatingLeases: 2,
-  nonCurrentOperatingLeases: 8,
-  equity: 200,
-  ...overrides,
-})
-
-const tsRow = (
-  ticker: string,
-  overrides: Partial<TickerStateRow> = {},
-): TickerStateRow => ({
-  ticker,
-  latestFiscalYearEnd: "2025-09-27",
-  pendingValuation: true,
-  currentPrice: 100,
-  ...overrides,
-})
+const yfRow = completeYearRow
+const tsRow = (ticker: string, overrides = {}) =>
+  tickerStateRow({ ticker, currentPrice: 100, ...overrides })
 
 const sampleValuation = {
   ticker: "AAPL",
@@ -72,6 +31,17 @@ describe("CompanyRepository - TickerState", () => {
   it("insertTickerState + getTickerState roundtrip", () => {
     const repo = setup()
     const row = tsRow("AAPL")
+    repo.insertTickerState(row)
+    expect(repo.getTickerState("AAPL")).toEqual(row)
+  })
+
+  it("insertTickerState con latestFiscalYearEnd null + getTickerState roundtrip", () => {
+    const repo = setup()
+    const row = tsRow("AAPL", {
+      latestFiscalYearEnd: null,
+      pendingValuation: false,
+      currentPrice: 180,
+    })
     repo.insertTickerState(row)
     expect(repo.getTickerState("AAPL")).toEqual(row)
   })
