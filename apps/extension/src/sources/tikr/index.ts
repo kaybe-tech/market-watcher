@@ -1,0 +1,6 @@
+export type { TikrPageData } from "./domParser"
+export { parseTikrPage } from "./domParser"
+export type { ParsedTable, TableRow } from "./fieldMapper"
+export { mapTikrToPayload } from "./fieldMapper"
+export type { TikrSection } from "./urlMatcher"
+export { matchTikrUrl, SUPPORTED_HOST } from "./urlMatcher"
