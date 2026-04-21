@@ -1,10 +1,21 @@
 import { sql } from "drizzle-orm"
 import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite"
 import { Hono } from "hono"
+import { cors } from "hono/cors"
 import { createCompanyRoutes } from "@/modules/company/routes"
 
 export const createApp = (db: BunSQLiteDatabase) => {
   const app = new Hono()
+
+  app.use(
+    "*",
+    cors({
+      origin: (origin) =>
+        origin?.startsWith("chrome-extension://") ? origin : null,
+      allowMethods: ["GET", "POST", "OPTIONS"],
+      allowHeaders: ["Content-Type"],
+    }),
+  )
 
   app.onError((err, c) => {
     const message = err instanceof Error ? err.message : "internal"

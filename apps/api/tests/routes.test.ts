@@ -539,3 +539,41 @@ describe("GET /companies/:ticker", () => {
     expect(body.valuation?.result).toEqual({ tag: "third" })
   })
 })
+
+describe("CORS preflight", () => {
+  it("OPTIONS desde una extensión de Chrome → 204 con headers CORS", async () => {
+    const { app } = setup()
+
+    const res = await app.request("/companies/AAPL/data", {
+      method: "OPTIONS",
+      headers: {
+        origin: "chrome-extension://imhojfkooakaggefdamfapfmacfnicff",
+        "access-control-request-method": "POST",
+        "access-control-request-headers": "content-type",
+      },
+    })
+
+    expect(res.status).toBe(204)
+    expect(res.headers.get("access-control-allow-origin")).toBe(
+      "chrome-extension://imhojfkooakaggefdamfapfmacfnicff",
+    )
+    expect(res.headers.get("access-control-allow-methods")).toContain("POST")
+    expect(
+      res.headers.get("access-control-allow-headers")?.toLowerCase(),
+    ).toContain("content-type")
+  })
+
+  it("OPTIONS desde un origen no confiable → sin Allow-Origin", async () => {
+    const { app } = setup()
+
+    const res = await app.request("/companies/AAPL/data", {
+      method: "OPTIONS",
+      headers: {
+        origin: "https://evil.example.com",
+        "access-control-request-method": "POST",
+      },
+    })
+
+    expect(res.headers.get("access-control-allow-origin")).toBeNull()
+  })
+})
