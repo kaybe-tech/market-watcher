@@ -26,7 +26,7 @@ La URL base del API se configura vía una options page persistida en `chrome.sto
 - Identificación del indicador de unidades visible en la página (_millions_, _thousands_, _billions_).
 
 **Extracción**
-- Lectura de los valores tabulares para cada año fiscal histórico visible de la sección detectada, con exclusión de las columnas marcadas como estimates.
+- Lectura de los valores tabulares para cada fiscal year cerrado visible de la sección detectada, excluyendo columnas con sufijo `E` (estimates) y la columna `LTM`.
 - Extracción del precio actual desde la cabecera de la página.
 
 **Preview previo al envío**
@@ -49,7 +49,7 @@ La URL base del API se configura vía una options page persistida en `chrome.sto
 - Soporte para otras fuentes distintas de TIKR (InvestingPro, StockAnalysis, etc.) — se definen en PRDs separados.
 - Autenticación, usuarios múltiples, sincronización con un API desplegado.
 - Consulta post-envío del estado de la empresa ni visualización de la valoración dentro de la extensión.
-- Captura de columnas de estimates o soporte de forecasts de analistas.
+- Captura de columnas con sufijo `E` (estimates), la columna `LTM` (last twelve months) o cualquier otra columna que no corresponda a un fiscal year cerrado.
 - Captura batch de múltiples empresas en una sola acción; un envío = una sección de una empresa.
 - Modificación del contrato del API ni del endpoint `POST /companies/:ticker/data`.
 - Tests end-to-end automatizados del scraping del DOM de TIKR.
@@ -69,9 +69,9 @@ Para validar el MVP se ejercita el flujo end-to-end contra el API corriendo loca
 
 5. Cuando el API responde con un código distinto de 200 (o la red falla), el popup muestra un mensaje de error legible en lugar del feedback de éxito; cuando una celda de la tabla aparece como `--`, `—` o vacía, el payload omite ese campo sin romper el envío.
 
-6. Las columnas marcadas como estimates (sufijo `E`) nunca aparecen como años en el payload enviado al API.
+6. Las columnas con sufijo `E` (estimates) y la columna `LTM` nunca aparecen en el payload enviado al API.
 
-7. Los tests unitarios de la lógica pura (normalizador numérico, parser de celdas, detector de estimates, mapeo TIKR → contrato del API) y los del `domParser` sobre los fixtures HTML pasan.
+7. Los tests unitarios de la lógica pura (normalizador numérico, parser de celdas, filtro de columnas, parser de fiscal years, mapeo TIKR → contrato del API) y los del `domParser` sobre los fixtures HTML pasan.
 
 ## Flujos
 
@@ -90,13 +90,13 @@ Describe cómo la extensión reconoce en qué sección de TIKR está el usuario 
 3. La extensión ejecuta un script sobre el DOM de la pestaña para extraer:
    - El ticker desde la cabecera de la página.
    - El precio actual desde la cabecera.
-   - El indicador de unidades visible cerca de la tabla (_$ in millions_, _$ in thousands_, _$ in billions_).
-   - Los encabezados de columna de la tabla principal, filtrando las columnas con sufijo `E` (estimates).
-   - Los valores de cada fila, por cada columna histórica no filtrada.
+   - El indicador de unidades visible cerca de la tabla (_Millions_, _Thousands_ o _Billions_).
+   - Los encabezados de columna de la tabla principal (formato `M/D/YY`, ej: `1/28/24`), excluyendo columnas con sufijo `E` (estimates) y la columna `LTM`.
+   - Los valores de cada fila, por cada columna no excluida.
 
-4. La extensión muestra en el popup el preview con: sección detectada, ticker, rango de años históricos (el menor y mayor de los años no-estimate), precio actual, y un botón **Enviar**.
+4. La extensión muestra en el popup el preview con: sección detectada, ticker, rango de años (el menor y mayor de los fiscal years cerrados visibles), precio actual, y un botón **Enviar**.
 
-5. Si cualquier dato esencial no se pudo extraer (ticker, ningún año histórico, o sección no identificada), el botón Enviar queda deshabilitado y el popup indica el problema.
+5. Si cualquier dato esencial no se pudo extraer (ticker, ningún fiscal year cerrado, o sección no identificada), el botón Enviar queda deshabilitado y el popup indica el problema.
 
 ### Flujo 2: Envío de datos al API
 
@@ -153,7 +153,7 @@ Describe cómo el usuario cambia el endpoint al que la extensión envía los dat
 **Testing**
 
 - `bun:test` como runner para los tests unitarios.
-- Tests de lógica pura sin dependencias del DOM: normalizador numérico, parser de celdas, detector de estimates, mapeo TIKR → contrato del API.
+- Tests de lógica pura sin dependencias del DOM: normalizador numérico, parser de celdas, filtro de columnas (estimates + LTM), parser de fiscal years, mapeo TIKR → contrato del API.
 - Tests del `domParser` apoyados en **fixtures HTML** congelados en `apps/extension/tests/fixtures/tikr/` (un fragmento HTML por sección × empresa de referencia). Los fixtures se cargan con `Bun.file()`, se montan en un DOM simulado y se valida que el parser extrae ticker, precio, unidades, años y valores tabulares esperados.
 - Sin tests end-to-end contra el DOM en vivo de TIKR en el MVP.
 
@@ -185,7 +185,8 @@ apps/
     │   │       └── index.ts            punto único de entrada de la fuente TIKR
     │   ├── lib/
     │   │   ├── numberParser.ts         parser de celdas (comas, paréntesis, guiones) y normalización por unidades
-    │   │   ├── estimateFilter.ts       detecta columnas de estimates (sufijo E) y las excluye
+    │   │   ├── columnFilter.ts         excluye columnas con sufijo E (estimates) y la columna LTM
+    │   │   ├── fiscalYearParser.ts     convierte headers M/D/YY a YYYY-MM-DD con pivot de año 2-dígitos
     │   │   └── apiClient.ts            cliente fetch contra POST /companies/:ticker/data
     │   └── storage/
     │       └── settings.ts             lectura y escritura de la URL base del API en chrome.storage
@@ -193,7 +194,8 @@ apps/
     │   ├── fixtures/
     │   │   └── tikr/                   fragmentos HTML congelados (income-statement/balance-sheet/cash-flow-statement × NVDA, AAPL, TSM, NKE)
     │   ├── numberParser.test.ts        unit tests de parser y normalización
-    │   ├── estimateFilter.test.ts      unit tests del filtro de estimates
+    │   ├── columnFilter.test.ts        unit tests del filtro de columnas no-fiscales
+    │   ├── fiscalYearParser.test.ts    unit tests del parser M/D/YY → YYYY-MM-DD
     │   ├── fieldMapper.test.ts         unit tests del mapeo TIKR → contrato del API
     │   └── domParser.test.ts           unit tests que cargan los fixtures y validan extracción de ticker, precio, unidades, años y valores
     ├── wxt.config.ts
@@ -204,6 +206,15 @@ apps/
 ### Contrato de extracción
 
 La extensión convierte cada página de TIKR en un fragmento del payload de `POST /companies/:ticker/data`. El mapeo página → sub-objeto no es 1:1: la página Balance Sheet de TIKR contiene campos que el contrato del API agrupa tanto en `roic` como en `freeCashFlow`.
+
+#### Columnas de la tabla
+
+Cada página contable presenta una tabla con una fila por campo y una columna por fiscal year, más columnas adicionales que **no** corresponden a un cierre fiscal cerrado y que se excluyen del payload:
+
+- **Columnas con sufijo `E`** (ej: `1/25/27E`): estimates de analistas, no datos reales.
+- **Columna `LTM`**: Last Twelve Months, un rolling trailing de los últimos cuatro trimestres.
+
+Solo las columnas cuyo header tiene formato `M/D/YY` sin sufijo `E` y no es `LTM` se incluyen en el payload.
 
 #### Income Statement (TIKR) → `incomeStatement` del payload
 
@@ -232,11 +243,17 @@ Antes de incluir un valor en el payload:
 - Las comas de miles se eliminan.
 - Los paréntesis se traducen a signo negativo: `(1,234.56)` → `-1234.56`.
 - El valor se multiplica o divide según el indicador de unidades visible en la página:
-  - `$ in millions` → factor `1`.
-  - `$ in thousands` → factor `1/1000`.
-  - `$ in billions` → factor `1000`.
+  - `Millions` → factor `1`.
+  - `Thousands` → factor `1/1000`.
+  - `Billions` → factor `1000`.
 
 El API siempre recibe valores en millones.
+
+### Parseo de fiscal years
+
+Los encabezados de columna de TIKR vienen en formato `M/D/YY` sin leading zeros (ej: `1/29/17`, `1/25/26`). El parser los convierte a `YYYY-MM-DD` antes de asignarlos al `fiscalYearEnd` del payload.
+
+El año de dos dígitos se pivotea tomando el año actual como referencia: `YY` > `(currentYear % 100) + 10` se interpreta como siglo XX (19YY); el resto, como siglo XXI (20YY). Este umbral rodante (actual + 10 años) absorbe tanto históricos antiguos como estimates futuros cercanos sin ambigüedad.
 
 ### Dependencias entre workspaces
 
