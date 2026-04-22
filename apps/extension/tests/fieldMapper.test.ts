@@ -175,4 +175,58 @@ describe("mapTikrToPayload", () => {
     )
     expect(result[0]?.freeCashFlow?.dividendsPaid).toBe(-105)
   })
+
+  test("case (1): fila ausente en la tabla → campo = 0", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-01-28"],
+        rows: [{ label: "Revenues", values: ["10,000"] }],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.minorityInterests).toBe(0)
+    expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(0)
+    expect(result[0]?.incomeStatement?.ebit).toBe(0)
+    expect(result[0]?.incomeStatement?.interestExpense).toBe(0)
+    expect(result[0]?.incomeStatement?.interestIncome).toBe(0)
+    expect(result[0]?.incomeStatement?.taxExpense).toBe(0)
+    expect(result[0]?.incomeStatement?.fullyDilutedShares).toBe(0)
+  })
+
+  test("case (2): fila existe pero la celda de esa columna es undefined → campo = 0", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2023-01-29", "2024-01-28"],
+        rows: [
+          { label: "Revenues", values: ["10,000", "20,000"] },
+          { label: "Operating Income", values: ["1,000"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.ebit).toBe(1000)
+    expect(result[1]?.incomeStatement?.ebit).toBe(0)
+  })
+
+  test("case (3): celda con valor no parseable → campo omitido del payload", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-01-28"],
+        rows: [
+          { label: "Revenues", values: ["10,000"] },
+          { label: "Minority Interest", values: ["--"] },
+          { label: "Operating Income", values: ["NM"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.minorityInterests).toBeUndefined()
+    expect(result[0]?.incomeStatement?.ebit).toBeUndefined()
+  })
 })
