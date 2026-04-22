@@ -110,3 +110,7 @@ export const estimatesBodySchema = v.pipe(
 
 export type EstimatesBodyInput = v.InferInput<typeof estimatesBodySchema>
 export type EstimatesBodyOutput = v.InferOutput<typeof estimatesBodySchema>
+
+export const sourceQuerySchema = v.object({
+  source: v.pipe(v.string(), v.minLength(1, "source must not be empty")),
+})

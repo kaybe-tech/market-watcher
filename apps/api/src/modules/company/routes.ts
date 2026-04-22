@@ -6,6 +6,7 @@ import { CompanyRepository } from "./repository"
 import {
   estimatesBodySchema,
   ingestBodySchema,
+  sourceQuerySchema,
   tickerParamSchema,
 } from "./validators"
 
@@ -44,6 +45,21 @@ export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
         })
       }
       return c.json({ success: true })
+    },
+  )
+
+  routes.get(
+    "/companies/:ticker/valuations",
+    sValidator("param", tickerParamSchema),
+    sValidator("query", sourceQuerySchema),
+    (c) => {
+      const { ticker } = c.req.valid("param")
+      const { source } = c.req.valid("query")
+      const valuation = company.runOnTheFlyValuationBySource(ticker, source)
+      if (valuation === null) {
+        return c.json({ error: "no_data_for_source", ticker, source }, 404)
+      }
+      return c.json(valuation)
     },
   )
 

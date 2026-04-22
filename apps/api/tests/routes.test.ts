@@ -633,6 +633,35 @@ describe("GET /companies/:ticker con estimates", () => {
   })
 })
 
+describe("GET /companies/:ticker/valuations?source=<source>", () => {
+  it("devuelve valoración on-the-fly para una source con datos", async () => {
+    const { app, company } = setupWithCompleteFinancialsViaRoute("AMZN")
+    company.ingestEstimates("AMZN", {
+      source: "tikr",
+      years: [
+        { fiscalYearEnd: "2026-12-31", salesGrowth: 0.45, ebitMargin: 0.62 },
+      ],
+    })
+    await company.valuate("AMZN")
+    const res = await app.request("/companies/AMZN/valuations?source=tikr")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.intrinsicValue).toBeDefined()
+  })
+
+  it("404 si la source no tiene datos para el ticker", async () => {
+    const { app } = setupWithCompleteFinancialsViaRoute("AMZN")
+    const res = await app.request("/companies/AMZN/valuations?source=tikr")
+    expect(res.status).toBe(404)
+  })
+
+  it("400 si source no está presente", async () => {
+    const { app } = setupWithCompleteFinancialsViaRoute("AMZN")
+    const res = await app.request("/companies/AMZN/valuations")
+    expect(res.status).toBe(400)
+  })
+})
+
 describe("CORS preflight", () => {
   it("OPTIONS desde una extensión de Chrome → 204 con headers CORS", async () => {
     const { app } = setup()

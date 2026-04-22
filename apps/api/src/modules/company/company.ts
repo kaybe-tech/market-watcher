@@ -201,6 +201,44 @@ export class Company {
     return this.inProgressTickers.has(ticker)
   }
 
+  runOnTheFlyValuationBySource(
+    ticker: string,
+    source: string,
+  ): CompanyValuation | null {
+    const state = this.repository.getTickerState(ticker)
+    if (!state || state.latestFiscalYearEnd === null) return null
+    if (state.currentPrice === null) return null
+
+    const estimateRows = this.repository
+      .listEstimatesForTicker(ticker)
+      .filter((row) => row.source === source)
+    if (estimateRows.length === 0) return null
+
+    const rows = this.repository.listYearlyFinancialsForTicker(ticker)
+    const series = this.consolidateConsecutiveYears(
+      rows,
+      state.latestFiscalYearEnd,
+    )
+    if (series.length < MIN_CONSECUTIVE_YEARS_FOR_VALUATION) return null
+
+    const financials = this.buildEngineFinancials(series)
+    const overrides = mergeOverrides(estimateRows)
+    try {
+      return new CompanyValuation({
+        ticker,
+        currentPrice: state.currentPrice,
+        financials,
+        overrides,
+      })
+    } catch (err) {
+      console.error(
+        `on-the-fly valuation for ${ticker} source=${source} failed:`,
+        err,
+      )
+      return null
+    }
+  }
+
   async getCompanyView(ticker: string): Promise<CompanyView | null> {
     const initialState = this.repository.getTickerState(ticker)
     if (initialState === null) return null
