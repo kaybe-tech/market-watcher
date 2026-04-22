@@ -72,4 +72,63 @@ describe("mapTikrEstimatesToPayload", () => {
       { fiscalYearEnd: "2027-01-31" },
     ])
   })
+
+  describe("maxYears", () => {
+    const fiveYears: ParsedTable = {
+      fiscalYears: [
+        "2026-01-31",
+        "2027-01-31",
+        "2028-01-31",
+        "2029-01-31",
+        "2030-01-31",
+      ],
+      rows: [
+        { label: "Revenue", values: ["100", "200", "300", "400", "500"] },
+        {
+          label: "% Change YoY",
+          values: ["10.0%", "20.0%", "30.0%", "40.0%", "50.0%"],
+        },
+      ],
+    }
+
+    it("sin maxYears: devuelve todos los años (comportamiento actual)", () => {
+      expect(mapTikrEstimatesToPayload(fiveYears)).toHaveLength(5)
+    })
+
+    it("maxYears = 3: devuelve los 3 años más tempranos por fiscalYearEnd", () => {
+      expect(mapTikrEstimatesToPayload(fiveYears, 3)).toEqual([
+        { fiscalYearEnd: "2026-01-31", salesGrowth: 0.1 },
+        { fiscalYearEnd: "2027-01-31", salesGrowth: 0.2 },
+        { fiscalYearEnd: "2028-01-31", salesGrowth: 0.3 },
+      ])
+    })
+
+    it("ordena ascendente antes de cortar cuando la tabla viene en orden descendente", () => {
+      const descending: ParsedTable = {
+        fiscalYears: ["2030-01-31", "2029-01-31", "2028-01-31", "2027-01-31"],
+        rows: [
+          { label: "Revenue", values: ["500", "400", "300", "200"] },
+          {
+            label: "% Change YoY",
+            values: ["50.0%", "40.0%", "30.0%", "20.0%"],
+          },
+        ],
+      }
+      expect(mapTikrEstimatesToPayload(descending, 2)).toEqual([
+        { fiscalYearEnd: "2027-01-31", salesGrowth: 0.2 },
+        { fiscalYearEnd: "2028-01-31", salesGrowth: 0.3 },
+      ])
+    })
+
+    it("maxYears mayor a la cantidad disponible: devuelve todos", () => {
+      const twoYears: ParsedTable = {
+        fiscalYears: ["2026-01-31", "2027-01-31"],
+        rows: [
+          { label: "Revenue", values: ["100", "200"] },
+          { label: "% Change YoY", values: ["10.0%", "20.0%"] },
+        ],
+      }
+      expect(mapTikrEstimatesToPayload(twoYears, 5)).toHaveLength(2)
+    })
+  })
 })

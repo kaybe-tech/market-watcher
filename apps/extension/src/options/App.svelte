@@ -2,34 +2,64 @@
 import { onMount } from "svelte"
 import {
   DEFAULT_API_URL,
+  DEFAULT_ESTIMATE_YEARS_LIMIT,
   getApiUrl,
+  getEstimateYearsLimit,
   isValidApiUrl,
+  isValidEstimateYearsLimit,
   setApiUrl,
+  setEstimateYearsLimit,
 } from "../storage/settings"
 
-let value = DEFAULT_API_URL
+let apiUrl = DEFAULT_API_URL
+let estimateYearsLimit: number = DEFAULT_ESTIMATE_YEARS_LIMIT
 let feedback: { kind: "success" | "error"; message: string } | null = null
 
 onMount(async () => {
-  value = await getApiUrl()
+  apiUrl = await getApiUrl()
+  estimateYearsLimit = await getEstimateYearsLimit()
 })
 
 const save = async (): Promise<void> => {
-  if (!isValidApiUrl(value)) {
+  if (!isValidApiUrl(apiUrl)) {
     feedback = { kind: "error", message: "La URL no es válida." }
     return
   }
-  await setApiUrl(value)
+  if (!isValidEstimateYearsLimit(estimateYearsLimit)) {
+    feedback = {
+      kind: "error",
+      message: "Años de estimates debe ser un entero entre 1 y 10.",
+    }
+    return
+  }
+  await Promise.all([
+    setApiUrl(apiUrl),
+    setEstimateYearsLimit(estimateYearsLimit),
+  ])
   feedback = { kind: "success", message: "Guardado ✓" }
 }
 </script>
 
 <main>
   <h1>Opciones</h1>
-  <p class="muted">Configura a qué endpoint envía la extensión los datos.</p>
+  <p class="muted">Configura cómo la extensión envía datos al API.</p>
   <label>
     URL base del API
-    <input type="url" bind:value placeholder="http://localhost:3000" />
+    <input type="url" bind:value={apiUrl} placeholder="http://localhost:3000" />
+  </label>
+  <label>
+    Años de estimates a considerar
+    <input
+      type="number"
+      min="1"
+      max="10"
+      step="1"
+      bind:value={estimateYearsLimit}
+    />
+    <span class="muted hint">
+      Solo se envían los primeros N años proyectados (los más cercanos). Los
+      años más lejanos suelen tener menos analistas y peor consenso.
+    </span>
   </label>
   <button type="button" on:click={save}>Guardar</button>
   {#if feedback}
@@ -53,6 +83,9 @@ const save = async (): Promise<void> => {
   .muted {
     color: #888;
     margin: 0;
+  }
+  .hint {
+    font-size: 0.8em;
   }
   label {
     display: flex;
