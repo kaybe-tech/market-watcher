@@ -48,3 +48,42 @@ export const sendIngest = async (
   }
   return { ok: true }
 }
+
+export type EstimateYearInput = {
+  fiscalYearEnd: string
+  salesGrowth?: number
+  ebitMargin?: number
+  taxRate?: number
+  capexMaintenanceSalesRatio?: number
+  netDebtEbitdaRatio?: number
+}
+
+export type EstimatesPayload = {
+  source: string
+  years?: EstimateYearInput[]
+}
+
+export const sendEstimates = async (
+  apiUrl: string,
+  ticker: string,
+  payload: EstimatesPayload,
+): Promise<IngestResult> => {
+  const base = apiUrl.replace(/\/+$/, "")
+  const url = `${base}/companies/${encodeURIComponent(ticker)}/estimates`
+  let response: Response
+  try {
+    response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+    })
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "network error"
+    return { ok: false, status: null, message }
+  }
+  if (!response.ok) {
+    const message = await parseErrorMessage(response)
+    return { ok: false, status: response.status, message }
+  }
+  return { ok: true }
+}
