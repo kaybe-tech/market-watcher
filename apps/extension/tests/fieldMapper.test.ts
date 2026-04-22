@@ -266,4 +266,120 @@ describe("mapTikrToPayload", () => {
     expect(result[0]?.incomeStatement?.ebit).toBe(0)
     expect(result[0]?.incomeStatement?.interestExpense).toBe(0)
   })
+
+  test("sales prefiere Total Revenues sobre Revenues cuando ambas existen", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-06-30"],
+        rows: [
+          { label: "Revenues", values: ["348.83"] },
+          { label: "Other Revenues", values: ["0.63"] },
+          { label: "Total Revenues", values: ["349.46"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.sales).toBe(349.46)
+  })
+
+  test("sales cae a Revenues cuando Total Revenues no existe", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-06-30"],
+        rows: [{ label: "Revenues", values: ["100"] }],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.sales).toBe(100)
+  })
+
+  test("shortTermDebt suma Current Portion of LTD y Short-term Borrowings", () => {
+    const result = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2020-06-30"],
+        rows: [
+          { label: "Short-term Borrowings", values: ["1.03"] },
+          { label: "Current Portion of Long-Term Debt", values: ["0.41"] },
+          { label: "Long-Term Debt", values: ["8.15"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.roic?.shortTermDebt).toBeCloseTo(1.44, 10)
+  })
+
+  test("shortTermDebt funciona si solo existe una de las dos filas", () => {
+    const onlyCurrentPortion = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Current Portion of Long-Term Debt", values: ["0.77"] },
+        ],
+      },
+      "millions",
+    )
+    expect(onlyCurrentPortion[0]?.roic?.shortTermDebt).toBe(0.77)
+
+    const onlyBorrowings = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2020-06-30"],
+        rows: [{ label: "Short-term Borrowings", values: ["1.03"] }],
+      },
+      "millions",
+    )
+    expect(onlyBorrowings[0]?.roic?.shortTermDebt).toBe(1.03)
+  })
+
+  test("shortTermDebt = 0 cuando ambas filas están visualmente vacías", () => {
+    const result = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Short-term Borrowings", values: ["--"] },
+          { label: "Current Portion of Long-Term Debt", values: [""] },
+        ],
+      },
+      "millions",
+    )
+    expect(result[0]?.roic?.shortTermDebt).toBe(0)
+  })
+
+  test("D&A del income statement se almacena como positivo", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Revenues", values: ["100"] },
+          { label: "Depreciation & Amortization", values: ["(10.32)"] },
+          { label: "Operating Income", values: ["50"] },
+        ],
+      },
+      "millions",
+    )
+    expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(10.32)
+  })
+
+  test("D&A del cash flow se almacena como positivo (ya lo era)", () => {
+    const result = mapTikrToPayload(
+      "cashFlowStatement",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Total Depreciation & Amortization", values: ["10.32"] },
+        ],
+      },
+      "millions",
+    )
+    expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(10.32)
+  })
 })
