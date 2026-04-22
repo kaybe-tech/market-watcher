@@ -219,18 +219,21 @@ describe("E2E criterio 6 — GET devuelve la última valoración", () => {
       fiscalYearEnd: "2024-12-31",
       result: { tag: "older" } as unknown as CompanyValuation,
       createdAt: "2026-04-18T10:00:00.000Z",
+      source: "auto",
     })
     repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
       result: { tag: "tie-earlier" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
+      source: "auto",
     })
     const winner = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
       result: { tag: "winner" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
+      source: "auto",
     })
 
     const res = await getCompany(app, "AAPL")

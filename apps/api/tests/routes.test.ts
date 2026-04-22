@@ -517,18 +517,21 @@ describe("GET /companies/:ticker", () => {
       fiscalYearEnd: "2024-12-31",
       result: { tag: "first" } as unknown as CompanyValuation,
       createdAt: "2026-04-18T09:00:00.000Z",
+      source: "auto",
     })
     const second = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
       result: { tag: "second" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
+      source: "auto",
     })
     const third = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
       result: { tag: "third" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
+      source: "auto",
     })
 
     const res = await getCompany(app, "AAPL")

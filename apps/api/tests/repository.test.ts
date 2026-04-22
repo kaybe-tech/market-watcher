@@ -138,6 +138,7 @@ describe("CompanyRepository - Valuation", () => {
       fiscalYearEnd: "2025-09-27",
       result: sampleValuation,
       createdAt: "2026-04-19T12:00:00.000Z",
+      source: "auto",
     })
 
     expect(inserted.id).toBeGreaterThan(0)
@@ -157,18 +158,21 @@ describe("CompanyRepository - Valuation", () => {
       fiscalYearEnd: "2024-09-28",
       result: sampleValuation,
       createdAt: "2026-01-01T00:00:00.000Z",
+      source: "auto",
     })
     repo.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2025-09-27",
       result: sampleValuation,
       createdAt: "2026-04-01T00:00:00.000Z",
+      source: "auto",
     })
     repo.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2023-09-30",
       result: sampleValuation,
       createdAt: "2026-02-15T00:00:00.000Z",
+      source: "auto",
     })
 
     const latest = repo.getLatestValuation("AAPL")
@@ -184,12 +188,14 @@ describe("CompanyRepository - Valuation", () => {
       fiscalYearEnd: "2024-09-28",
       result: sampleValuation,
       createdAt,
+      source: "auto",
     })
     const second = repo.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2025-09-27",
       result: sampleValuation,
       createdAt,
+      source: "auto",
     })
     expect(second.id).toBeGreaterThan(first.id)
 

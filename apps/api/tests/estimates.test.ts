@@ -54,20 +54,20 @@ describe("mergeOverrides", () => {
       row("zeta", "2027-01-31", { salesGrowth: 0.10 }),
       row("alpha", "2027-01-31", { salesGrowth: 0.20 }),
     ])
-    expect(result.projections[2027]).toEqual({ salesGrowth: 0.20 })
+    expect(result.projections![2027]).toEqual({ salesGrowth: 0.20 })
   })
 
   it("omite campos null en todas las sources", () => {
     const result = mergeOverrides([
       row("tikr", "2027-01-31", { salesGrowth: null, ebitMargin: null }),
     ])
-    expect(result.projections[2027]).toBeUndefined()
+    expect(result.projections![2027]).toBeUndefined()
   })
 
   it("trata 0 como valor válido (no como null)", () => {
     const result = mergeOverrides([
       row("tikr", "2027-01-31", { salesGrowth: 0 }),
     ])
-    expect(result.projections[2027]).toEqual({ salesGrowth: 0 })
+    expect(result.projections![2027]).toEqual({ salesGrowth: 0 })
   })
 })
