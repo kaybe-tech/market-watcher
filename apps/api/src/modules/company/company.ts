@@ -57,6 +57,20 @@ export type IngestPayload = {
   years: IncomingYearlyFinancials[]
 }
 
+export type IncomingEstimateYear = {
+  fiscalYearEnd: string
+  salesGrowth?: number
+  ebitMargin?: number
+  taxRate?: number
+  capexMaintenanceSalesRatio?: number
+  netDebtEbitdaRatio?: number
+}
+
+export type IngestEstimatesPayload = {
+  source: string
+  years?: IncomingEstimateYear[]
+}
+
 const EMPTY_YEARLY_FINANCIALS = Object.fromEntries(
   Object.values(INPUT_FIELDS)
     .flat()
@@ -132,6 +146,50 @@ export class Company {
       )
 
       return { pendingValuation }
+    })
+  }
+
+  ingestEstimates(
+    ticker: string,
+    payload: IngestEstimatesPayload,
+  ): IngestResult {
+    return this.repository.runInTransaction(() => {
+      const previousState = this.repository.getTickerState(ticker)
+      const capturedAt = new Date().toISOString()
+
+      const years = payload.years ?? []
+      let hasWrites = false
+      for (const year of years) {
+        this.repository.upsertEstimate({
+          ticker,
+          fiscalYearEnd: year.fiscalYearEnd,
+          source: payload.source,
+          capturedAt,
+          salesGrowth: year.salesGrowth ?? null,
+          ebitMargin: year.ebitMargin ?? null,
+          taxRate: year.taxRate ?? null,
+          capexMaintenanceSalesRatio: year.capexMaintenanceSalesRatio ?? null,
+          netDebtEbitdaRatio: year.netDebtEbitdaRatio ?? null,
+        })
+        hasWrites = true
+      }
+
+      if (!hasWrites) {
+        return { pendingValuation: previousState?.pendingValuation ?? false }
+      }
+
+      if (previousState === null) {
+        this.repository.insertTickerState({
+          ticker,
+          latestFiscalYearEnd: null,
+          pendingValuation: true,
+          currentPrice: null,
+        })
+      } else if (!previousState.pendingValuation) {
+        this.repository.updateTickerState(ticker, { pendingValuation: true })
+      }
+
+      return { pendingValuation: true }
     })
   }
 
