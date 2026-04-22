@@ -30,6 +30,9 @@ describe("mapTikrToPayload", () => {
         interestExpense: -262,
         taxExpense: -187,
         fullyDilutedShares: 2507,
+        depreciationAmortization: 0,
+        interestIncome: 0,
+        minorityInterests: 0,
       },
     })
     expect(result[1]?.incomeStatement?.sales).toBe(60922)
@@ -59,10 +62,15 @@ describe("mapTikrToPayload", () => {
         marketableSecurities: 18704,
         longTermDebt: 8459,
         equity: 42978,
+        shortTermDebt: 0,
+        currentOperatingLeases: 0,
+        nonCurrentOperatingLeases: 0,
       },
       freeCashFlow: {
         inventories: 5282,
         accountsPayable: 2699,
+        accountsReceivable: 0,
+        unearnedRevenue: 0,
       },
     })
   })
@@ -109,7 +117,7 @@ describe("mapTikrToPayload", () => {
     expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(1508)
   })
 
-  test("omits fields with empty or dash values", () => {
+  test("celdas visualmente vacías y filas ausentes pasan a 0", () => {
     const result = mapTikrToPayload(
       "incomeStatement",
       {
@@ -125,7 +133,16 @@ describe("mapTikrToPayload", () => {
 
     expect(result[0]).toEqual({
       fiscalYearEnd: "2023-01-29",
-      incomeStatement: { sales: 10000 },
+      incomeStatement: {
+        sales: 10000,
+        depreciationAmortization: 0,
+        ebit: 0,
+        interestExpense: 0,
+        interestIncome: 0,
+        taxExpense: 0,
+        minorityInterests: 0,
+        fullyDilutedShares: 0,
+      },
     })
   })
 
@@ -174,5 +191,195 @@ describe("mapTikrToPayload", () => {
       "millions",
     )
     expect(result[0]?.freeCashFlow?.dividendsPaid).toBe(-105)
+  })
+
+  test("case (1): fila ausente en la tabla → campo = 0", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-01-28"],
+        rows: [{ label: "Revenues", values: ["10,000"] }],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.minorityInterests).toBe(0)
+    expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(0)
+    expect(result[0]?.incomeStatement?.ebit).toBe(0)
+    expect(result[0]?.incomeStatement?.interestExpense).toBe(0)
+    expect(result[0]?.incomeStatement?.interestIncome).toBe(0)
+    expect(result[0]?.incomeStatement?.taxExpense).toBe(0)
+    expect(result[0]?.incomeStatement?.fullyDilutedShares).toBe(0)
+  })
+
+  test("case (2): fila existe pero la celda de esa columna es undefined → campo = 0", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2023-01-29", "2024-01-28"],
+        rows: [
+          { label: "Revenues", values: ["10,000", "20,000"] },
+          { label: "Operating Income", values: ["1,000"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.ebit).toBe(1000)
+    expect(result[1]?.incomeStatement?.ebit).toBe(0)
+  })
+
+  test("case (3) unmeasurable: celda con NM/N/A → campo omitido", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-01-28"],
+        rows: [
+          { label: "Revenues", values: ["10,000"] },
+          { label: "Minority Interest", values: ["NM"] },
+          { label: "Operating Income", values: ["N/A"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.minorityInterests).toBeUndefined()
+    expect(result[0]?.incomeStatement?.ebit).toBeUndefined()
+  })
+
+  test("case (3) visual empty: celda vacía o con — → campo = 0", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-01-28"],
+        rows: [
+          { label: "Revenues", values: ["10,000"] },
+          { label: "Minority Interest", values: [""] },
+          { label: "Operating Income", values: ["—"] },
+          { label: "Interest Expense", values: ["--"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.minorityInterests).toBe(0)
+    expect(result[0]?.incomeStatement?.ebit).toBe(0)
+    expect(result[0]?.incomeStatement?.interestExpense).toBe(0)
+  })
+
+  test("sales prefiere Total Revenues sobre Revenues cuando ambas existen", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-06-30"],
+        rows: [
+          { label: "Revenues", values: ["348.83"] },
+          { label: "Other Revenues", values: ["0.63"] },
+          { label: "Total Revenues", values: ["349.46"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.sales).toBe(349.46)
+  })
+
+  test("sales cae a Revenues cuando Total Revenues no existe", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-06-30"],
+        rows: [{ label: "Revenues", values: ["100"] }],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.sales).toBe(100)
+  })
+
+  test("shortTermDebt suma Current Portion of LTD y Short-term Borrowings", () => {
+    const result = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2020-06-30"],
+        rows: [
+          { label: "Short-term Borrowings", values: ["1.03"] },
+          { label: "Current Portion of Long-Term Debt", values: ["0.41"] },
+          { label: "Long-Term Debt", values: ["8.15"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.roic?.shortTermDebt).toBeCloseTo(1.44, 10)
+  })
+
+  test("shortTermDebt funciona si solo existe una de las dos filas", () => {
+    const onlyCurrentPortion = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Current Portion of Long-Term Debt", values: ["0.77"] },
+        ],
+      },
+      "millions",
+    )
+    expect(onlyCurrentPortion[0]?.roic?.shortTermDebt).toBe(0.77)
+
+    const onlyBorrowings = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2020-06-30"],
+        rows: [{ label: "Short-term Borrowings", values: ["1.03"] }],
+      },
+      "millions",
+    )
+    expect(onlyBorrowings[0]?.roic?.shortTermDebt).toBe(1.03)
+  })
+
+  test("shortTermDebt = 0 cuando ambas filas están visualmente vacías", () => {
+    const result = mapTikrToPayload(
+      "balanceSheet",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Short-term Borrowings", values: ["--"] },
+          { label: "Current Portion of Long-Term Debt", values: [""] },
+        ],
+      },
+      "millions",
+    )
+    expect(result[0]?.roic?.shortTermDebt).toBe(0)
+  })
+
+  test("D&A del income statement se almacena como positivo", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Revenues", values: ["100"] },
+          { label: "Depreciation & Amortization", values: ["(10.32)"] },
+          { label: "Operating Income", values: ["50"] },
+        ],
+      },
+      "millions",
+    )
+    expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(10.32)
+  })
+
+  test("D&A del cash flow se almacena como positivo (ya lo era)", () => {
+    const result = mapTikrToPayload(
+      "cashFlowStatement",
+      {
+        fiscalYears: ["2025-06-30"],
+        rows: [
+          { label: "Total Depreciation & Amortization", values: ["10.32"] },
+        ],
+      },
+      "millions",
+    )
+    expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(10.32)
   })
 })

@@ -395,7 +395,7 @@ export class HistoricalYear {
     ebit: number,
     depreciationAmortization: number,
   ): number {
-    return ebit - depreciationAmortization
+    return ebit + Math.abs(depreciationAmortization)
   }
 
   private static computeSalesYoYGrowth(

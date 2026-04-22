@@ -1,6 +1,6 @@
 import type { IngestYear } from "../../lib/apiClient"
 import type { Unit } from "../../lib/numberParser"
-import { parseAndNormalize } from "../../lib/numberParser"
+import { isVisualEmpty, parseAndNormalize } from "../../lib/numberParser"
 import type { TikrSection } from "./urlMatcher"
 
 type FieldGroup = "incomeStatement" | "freeCashFlow" | "roic"
@@ -9,13 +9,15 @@ type FieldDefinition = {
   group: FieldGroup
   field: string
   labels: string[]
+  sum?: boolean
+  absolute?: boolean
 }
 
 const INCOME_STATEMENT_FIELDS: FieldDefinition[] = [
   {
     group: "incomeStatement",
     field: "sales",
-    labels: ["Revenues", "Total Revenues"],
+    labels: ["Total Revenues", "Revenues"],
   },
   {
     group: "incomeStatement",
@@ -24,6 +26,7 @@ const INCOME_STATEMENT_FIELDS: FieldDefinition[] = [
       "Total Depreciation & Amortization",
       "Depreciation & Amortization",
     ],
+    absolute: true,
   },
   { group: "incomeStatement", field: "ebit", labels: ["Operating Income"] },
   {
@@ -67,7 +70,8 @@ const BALANCE_SHEET_FIELDS: FieldDefinition[] = [
   {
     group: "roic",
     field: "shortTermDebt",
-    labels: ["Current Portion of Long-Term Debt"],
+    labels: ["Current Portion of Long-Term Debt", "Short-term Borrowings"],
+    sum: true,
   },
   { group: "roic", field: "longTermDebt", labels: ["Long-Term Debt"] },
   {
@@ -107,6 +111,7 @@ const CASH_FLOW_FIELDS: FieldDefinition[] = [
       "Total Depreciation & Amortization",
       "Depreciation & Amortization",
     ],
+    absolute: true,
   },
   {
     group: "freeCashFlow",
@@ -164,6 +169,40 @@ const applyValue = (
   bucket[field as keyof typeof bucket] = value
 }
 
+const resolveSingleValue = (
+  byLabel: Map<string, TableRow>,
+  labels: string[],
+  columnIndex: number,
+  unit: Unit,
+): { kind: "value"; value: number } | { kind: "zero" } | { kind: "skip" } => {
+  const row = findRow(byLabel, labels)
+  if (!row) return { kind: "zero" }
+  const raw = row.values[columnIndex]
+  if (raw === undefined) return { kind: "zero" }
+  const normalized = parseAndNormalize(raw, unit)
+  if (normalized !== null) return { kind: "value", value: normalized }
+  if (isVisualEmpty(raw)) return { kind: "zero" }
+  return { kind: "skip" }
+}
+
+const resolveSumValue = (
+  byLabel: Map<string, TableRow>,
+  labels: string[],
+  columnIndex: number,
+  unit: Unit,
+): { kind: "value"; value: number } => {
+  let total = 0
+  for (const label of labels) {
+    const row = byLabel.get(label)
+    if (!row) continue
+    const raw = row.values[columnIndex]
+    if (raw === undefined) continue
+    const normalized = parseAndNormalize(raw, unit)
+    if (normalized !== null) total += normalized
+  }
+  return { kind: "value", value: total }
+}
+
 export const mapTikrToPayload = (
   section: TikrSection,
   table: ParsedTable,
@@ -174,13 +213,17 @@ export const mapTikrToPayload = (
   return table.fiscalYears.map((fiscalYearEnd, columnIndex) => {
     const year: IngestYear = { fiscalYearEnd }
     for (const definition of fields) {
-      const row = findRow(byLabel, definition.labels)
-      if (!row) continue
-      const raw = row.values[columnIndex]
-      if (raw === undefined) continue
-      const normalized = parseAndNormalize(raw, unit)
-      if (normalized === null) continue
-      applyValue(year, definition.group, definition.field, normalized)
+      const resolved = definition.sum
+        ? resolveSumValue(byLabel, definition.labels, columnIndex, unit)
+        : resolveSingleValue(byLabel, definition.labels, columnIndex, unit)
+      if (resolved.kind === "value") {
+        const value = definition.absolute
+          ? Math.abs(resolved.value)
+          : resolved.value
+        applyValue(year, definition.group, definition.field, value)
+      } else if (resolved.kind === "zero") {
+        applyValue(year, definition.group, definition.field, 0)
+      }
     }
     return year
   })
