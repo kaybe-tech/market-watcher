@@ -177,7 +177,7 @@ export class ProjectedYear {
     )
     const interestIncome = ProjectedYear.computeInterestIncome(
       assumptions.incomeStatement.interestIncomeRate,
-      marketableSecurities,
+      cashMktSec,
     )
     const totalInterest = ProjectedYear.computeTotalInterest(
       interestExpense,
@@ -383,7 +383,7 @@ export class ProjectedYear {
     ebit: number,
     depreciationAmortization: number,
   ): number {
-    return ebit - depreciationAmortization
+    return ebit + Math.abs(depreciationAmortization)
   }
 
   private static computeEbitdaMargin(ebitda: number, sales: number): number {
@@ -496,9 +496,9 @@ export class ProjectedYear {
 
   private static computeInterestIncome(
     interestIncomeRate: number,
-    marketableSecurities: number,
+    cashMktSec: number,
   ): number {
-    return interestIncomeRate * marketableSecurities
+    return interestIncomeRate * cashMktSec
   }
 
   private static computeTotalInterest(

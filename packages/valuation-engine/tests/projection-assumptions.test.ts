@@ -46,3 +46,87 @@ runFixture("nvda", nvda as unknown as FixtureModule)
 runFixture("amzn", amzn as unknown as FixtureModule)
 runFixture("nke", nke as unknown as FixtureModule)
 runFixture("cost", cost as unknown as FixtureModule)
+
+describe("interestIncomeRate con distintos denominadores", () => {
+  const baseFinancials = (
+    mktSec: number,
+  ): FixtureInputs["financials"][string] => ({
+    incomeStatement: {
+      sales: 100,
+      depreciationAmortization: -10,
+      ebit: 20,
+      interestExpense: -1,
+      interestIncome: 0.5,
+      taxExpense: -5,
+      minorityInterests: 0,
+      fullyDilutedShares: 10,
+    },
+    freeCashFlow: {
+      capexMaintenance: -2,
+      inventories: 10,
+      accountsReceivable: 5,
+      accountsPayable: 3,
+      unearnedRevenue: 0,
+      dividendsPaid: -1,
+    },
+    roic: {
+      cashAndEquivalents: 20,
+      marketableSecurities: mktSec,
+      shortTermDebt: 1,
+      longTermDebt: 5,
+      currentOperatingLeases: 0,
+      nonCurrentOperatingLeases: 0,
+      equity: 50,
+    },
+  })
+
+  test("usa cash + marketableSecurities como denominador", () => {
+    const { built } = buildHistoricalYears({
+      ticker: "TEST",
+      currentPrice: 10,
+      financials: {
+        "2023": baseFinancials(10),
+        "2024": baseFinancials(10),
+      },
+    })
+    const a = new ProjectionAssumptions({ historical: built })
+    expect(a.incomeStatement.interestIncomeRate).toBeCloseTo(1 / 60, 10)
+  })
+
+  test("retorna 0 cuando cash + marketableSecurities == 0", () => {
+    const noCashOrMktSec = (): FixtureInputs["financials"][string] => {
+      const f = baseFinancials(0)
+      f.roic.cashAndEquivalents = 0
+      return f
+    }
+    const { built } = buildHistoricalYears({
+      ticker: "TEST",
+      currentPrice: 10,
+      financials: {
+        "2023": noCashOrMktSec(),
+        "2024": noCashOrMktSec(),
+      },
+    })
+    const a = new ProjectionAssumptions({ historical: built })
+    expect(a.incomeStatement.interestIncomeRate).toBe(0)
+  })
+
+  test("interestExpenseRate retorna 0 cuando sumDebt == 0", () => {
+    const noDebt = (): FixtureInputs["financials"][string] => {
+      const f = baseFinancials(0)
+      f.roic.shortTermDebt = 0
+      f.roic.longTermDebt = 0
+      return f
+    }
+    const { built } = buildHistoricalYears({
+      ticker: "TEST",
+      currentPrice: 10,
+      financials: {
+        "2023": noDebt(),
+        "2024": noDebt(),
+      },
+    })
+    const a = new ProjectionAssumptions({ historical: built })
+    expect(a.incomeStatement.interestExpenseRate).toBe(0)
+  })
+})

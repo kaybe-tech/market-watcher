@@ -127,6 +127,7 @@ export class ProjectionAssumptions {
     const sumDebt = ProjectionAssumptions.sum(
       years.map((y) => y.roic.shortTermDebt + y.roic.longTermDebt),
     )
+    if (sumDebt === 0) return 0
     return Math.abs(sumInterestExpense) / sumDebt
   }
 
@@ -134,10 +135,11 @@ export class ProjectionAssumptions {
     const sumInterestIncome = ProjectionAssumptions.sum(
       years.map((y) => y.incomeStatement.interestIncome),
     )
-    const sumMarketableSecurities = ProjectionAssumptions.sum(
-      years.map((y) => y.roic.marketableSecurities),
+    const sumCashMktSec = ProjectionAssumptions.sum(
+      years.map((y) => y.roic.cashAndEquivalents + y.roic.marketableSecurities),
     )
-    return sumInterestIncome / sumMarketableSecurities
+    if (sumCashMktSec === 0) return 0
+    return sumInterestIncome / sumCashMktSec
   }
 
   private static computeCapexMaintenanceSalesRatio(
