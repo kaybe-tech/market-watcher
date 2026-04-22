@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test"
 import * as v from "valibot"
 import {
   type IngestBodyInput,
+  estimatesBodySchema,
   ingestBodySchema,
   tickerParamSchema,
 } from "@/modules/company/validators"
@@ -390,8 +391,6 @@ describe("tickerParamSchema — casos borde", () => {
     expect(result.success).toBe(true)
   })
 })
-
-import { estimatesBodySchema } from "@/modules/company/validators"
 
 describe("estimatesBodySchema", () => {
   it("acepta payload mínimo con solo source", () => {
