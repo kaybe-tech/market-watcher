@@ -5,6 +5,8 @@ import {
   tickerState,
   type ValuationRow,
   valuations,
+  type YearlyEstimatesRow,
+  yearlyEstimates,
   type YearlyFinancialsRow,
   yearlyFinancials,
 } from "./schema"
@@ -119,5 +121,59 @@ export class CompanyRepository {
       .where(eq(valuations.ticker, ticker))
       .orderBy(desc(valuations.createdAt), desc(valuations.id))
       .all()
+  }
+
+  upsertEstimate(row: YearlyEstimatesRow): void {
+    this.db
+      .insert(yearlyEstimates)
+      .values(row)
+      .onConflictDoUpdate({
+        target: [
+          yearlyEstimates.ticker,
+          yearlyEstimates.fiscalYearEnd,
+          yearlyEstimates.source,
+        ],
+        set: {
+          capturedAt: row.capturedAt,
+          salesGrowth: row.salesGrowth,
+          ebitMargin: row.ebitMargin,
+          taxRate: row.taxRate,
+          capexMaintenanceSalesRatio: row.capexMaintenanceSalesRatio,
+          netDebtEbitdaRatio: row.netDebtEbitdaRatio,
+        },
+      })
+      .run()
+  }
+
+  listEstimatesForTicker(ticker: string): YearlyEstimatesRow[] {
+    return this.db
+      .select()
+      .from(yearlyEstimates)
+      .where(eq(yearlyEstimates.ticker, ticker))
+      .orderBy(desc(yearlyEstimates.fiscalYearEnd))
+      .all()
+  }
+
+  listSourcesForTicker(ticker: string): string[] {
+    const rows = this.db
+      .selectDistinct({ source: yearlyEstimates.source })
+      .from(yearlyEstimates)
+      .where(eq(yearlyEstimates.ticker, ticker))
+      .all()
+    return rows.map((row) => row.source)
+  }
+
+  getLatestValuationBySource(
+    ticker: string,
+    source: string,
+  ): ValuationRow | null {
+    const [row] = this.db
+      .select()
+      .from(valuations)
+      .where(and(eq(valuations.ticker, ticker), eq(valuations.source, source)))
+      .orderBy(desc(valuations.createdAt), desc(valuations.id))
+      .limit(1)
+      .all()
+    return row ?? null
   }
 }
