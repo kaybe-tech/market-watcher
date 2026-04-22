@@ -540,6 +540,51 @@ describe("GET /companies/:ticker", () => {
   })
 })
 
+describe("POST /companies/:ticker/estimates", () => {
+  it("acepta payload válido y persiste", async () => {
+    const { app, repository } = setup()
+    const res = await app.request("/companies/NVDA/estimates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: "tikr",
+        years: [
+          { fiscalYearEnd: "2027-01-31", salesGrowth: 0.45, ebitMargin: 0.62 },
+        ],
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ success: true })
+    const rows = repository.listEstimatesForTicker("NVDA")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.salesGrowth).toBe(0.45)
+  })
+
+  it("rechaza source vacío con 400", async () => {
+    const { app } = setup()
+    const res = await app.request("/companies/NVDA/estimates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "", years: [] }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it("normaliza ticker a mayúsculas", async () => {
+    const { app, repository } = setup()
+    const res = await app.request("/companies/nvda/estimates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: "tikr",
+        years: [{ fiscalYearEnd: "2027-01-31", salesGrowth: 0.45 }],
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(repository.listEstimatesForTicker("NVDA")).toHaveLength(1)
+  })
+})
+
 describe("CORS preflight", () => {
   it("OPTIONS desde una extensión de Chrome → 204 con headers CORS", async () => {
     const { app } = setup()
