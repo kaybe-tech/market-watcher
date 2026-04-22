@@ -4,6 +4,8 @@ import type {
 } from "@market-watcher/valuation-engine"
 import type { YearlyEstimatesRow } from "./schema"
 
+// Subconjunto de ProjectionYearOverride: omitimos shareGrowth y
+// changeInWorkingCapital porque no están en el schema de yearly_estimates.
 const OVERRIDE_FIELDS = [
   "salesGrowth",
   "ebitMargin",
