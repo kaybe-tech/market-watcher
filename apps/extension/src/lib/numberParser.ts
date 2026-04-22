@@ -6,7 +6,15 @@ const UNIT_FACTOR: Record<Unit, number> = {
   billions: 1000,
 }
 
-const EMPTY_CELL_VALUES = new Set(["", "--", "—", "-", "–", "N/A", "NA", "NM"])
+const VISUAL_EMPTY_VALUES = new Set(["", "--", "—", "-", "–"])
+const UNMEASURABLE_VALUES = new Set(["N/A", "NA", "NM"])
+const EMPTY_CELL_VALUES = new Set([
+  ...VISUAL_EMPTY_VALUES,
+  ...UNMEASURABLE_VALUES,
+])
+
+export const isVisualEmpty = (raw: string): boolean =>
+  VISUAL_EMPTY_VALUES.has(raw.replace(/ /g, " ").trim())
 
 export const parseCell = (raw: string): number | null => {
   const trimmed = raw.replace(/\u00a0/g, " ").trim()

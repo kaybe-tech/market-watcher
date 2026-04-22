@@ -117,7 +117,7 @@ describe("mapTikrToPayload", () => {
     expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(1508)
   })
 
-  test("omite solo campos no parseables; los ausentes pasan a 0", () => {
+  test("celdas visualmente vacías y filas ausentes pasan a 0", () => {
     const result = mapTikrToPayload(
       "incomeStatement",
       {
@@ -137,8 +137,10 @@ describe("mapTikrToPayload", () => {
         sales: 10000,
         depreciationAmortization: 0,
         ebit: 0,
+        interestExpense: 0,
         interestIncome: 0,
         taxExpense: 0,
+        minorityInterests: 0,
         fullyDilutedShares: 0,
       },
     })
@@ -227,15 +229,15 @@ describe("mapTikrToPayload", () => {
     expect(result[1]?.incomeStatement?.ebit).toBe(0)
   })
 
-  test("case (3): celda con valor no parseable → campo omitido del payload", () => {
+  test("case (3) unmeasurable: celda con NM/N/A → campo omitido", () => {
     const result = mapTikrToPayload(
       "incomeStatement",
       {
         fiscalYears: ["2024-01-28"],
         rows: [
           { label: "Revenues", values: ["10,000"] },
-          { label: "Minority Interest", values: ["--"] },
-          { label: "Operating Income", values: ["NM"] },
+          { label: "Minority Interest", values: ["NM"] },
+          { label: "Operating Income", values: ["N/A"] },
         ],
       },
       "millions",
@@ -243,5 +245,25 @@ describe("mapTikrToPayload", () => {
 
     expect(result[0]?.incomeStatement?.minorityInterests).toBeUndefined()
     expect(result[0]?.incomeStatement?.ebit).toBeUndefined()
+  })
+
+  test("case (3) visual empty: celda vacía o con — → campo = 0", () => {
+    const result = mapTikrToPayload(
+      "incomeStatement",
+      {
+        fiscalYears: ["2024-01-28"],
+        rows: [
+          { label: "Revenues", values: ["10,000"] },
+          { label: "Minority Interest", values: [""] },
+          { label: "Operating Income", values: ["—"] },
+          { label: "Interest Expense", values: ["--"] },
+        ],
+      },
+      "millions",
+    )
+
+    expect(result[0]?.incomeStatement?.minorityInterests).toBe(0)
+    expect(result[0]?.incomeStatement?.ebit).toBe(0)
+    expect(result[0]?.incomeStatement?.interestExpense).toBe(0)
   })
 })

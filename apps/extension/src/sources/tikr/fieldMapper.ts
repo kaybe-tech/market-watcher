@@ -1,6 +1,6 @@
 import type { IngestYear } from "../../lib/apiClient"
 import type { Unit } from "../../lib/numberParser"
-import { parseAndNormalize } from "../../lib/numberParser"
+import { isVisualEmpty, parseAndNormalize } from "../../lib/numberParser"
 import type { TikrSection } from "./urlMatcher"
 
 type FieldGroup = "incomeStatement" | "freeCashFlow" | "roic"
@@ -185,7 +185,12 @@ export const mapTikrToPayload = (
         continue
       }
       const normalized = parseAndNormalize(raw, unit)
-      if (normalized === null) continue
+      if (normalized === null) {
+        if (isVisualEmpty(raw)) {
+          applyValue(year, definition.group, definition.field, 0)
+        }
+        continue
+      }
       applyValue(year, definition.group, definition.field, normalized)
     }
     return year

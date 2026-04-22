@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import {
+  isVisualEmpty,
   normalizeToMillions,
   parseAndNormalize,
   parseCell,
@@ -80,5 +81,31 @@ describe("parseAndNormalize", () => {
 
   test("propagates null", () => {
     expect(parseAndNormalize("--", "millions")).toBeNull()
+  })
+})
+
+describe("isVisualEmpty", () => {
+  test.each([
+    "",
+    "  ",
+    "--",
+    "—",
+    "-",
+    "–",
+    " — ",
+    " ",
+  ])("true for visual empty marker %p", (raw) => {
+    expect(isVisualEmpty(raw)).toBe(true)
+  })
+
+  test.each([
+    "NM",
+    "N/A",
+    "NA",
+    "1234",
+    "abc",
+    "0",
+  ])("false for non-visual-empty marker %p", (raw) => {
+    expect(isVisualEmpty(raw)).toBe(false)
   })
 })
