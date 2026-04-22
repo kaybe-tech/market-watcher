@@ -1,9 +1,11 @@
 <script lang="ts">
 import { onMount } from "svelte"
-import type { IngestPayload, IngestYear } from "../lib/apiClient"
-import { sendIngest } from "../lib/apiClient"
+import type { EstimatesPayload, IngestPayload, IngestYear } from "../lib/apiClient"
+import { sendEstimates, sendIngest } from "../lib/apiClient"
 import type { TikrPageData } from "../sources/tikr/domParser"
 import { parseTikrPage } from "../sources/tikr/domParser"
+import type { EstimateYearPayload } from "../sources/tikr/estimatesFieldMapper"
+import { mapTikrEstimatesToPayload } from "../sources/tikr/estimatesFieldMapper"
 import { mapTikrToPayload } from "../sources/tikr/fieldMapper"
 import type { TikrSection } from "../sources/tikr/urlMatcher"
 import { matchTikrUrl } from "../sources/tikr/urlMatcher"
@@ -13,13 +15,22 @@ const SECTION_LABEL: Record<TikrSection, string> = {
   incomeStatement: "Income Statement",
   balanceSheet: "Balance Sheet",
   cashFlowStatement: "Cash Flow Statement",
+  estimates: "Estimates",
 }
 
-type Preview = {
-  section: TikrSection
-  data: TikrPageData
-  years: IngestYear[]
-}
+type Preview =
+  | {
+      kind: "financials"
+      section: Exclude<TikrSection, "estimates">
+      data: TikrPageData
+      years: IngestYear[]
+    }
+  | {
+      kind: "estimates"
+      section: "estimates"
+      data: TikrPageData
+      years: EstimateYearPayload[]
+    }
 
 type Status =
   | { kind: "loading" }
@@ -36,17 +47,15 @@ const extractHtml = (): string => document.documentElement.outerHTML
 const loadPage = async (): Promise<void> => {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
   if (!tab?.url || !tab.id) {
-    status = {
-      kind: "unsupported",
-      message: "No se pudo leer la pestaña activa.",
-    }
+    status = { kind: "unsupported", message: "No se pudo leer la pestaña activa." }
     return
   }
   const section = matchTikrUrl(tab.url)
   if (!section) {
     status = {
       kind: "unsupported",
-      message: "Abre una sección de TIKR (Income, Balance o Cash Flow).",
+      message:
+        "Abre una sección de TIKR (Income, Balance, Cash Flow o Estimates).",
     }
     return
   }
@@ -60,20 +69,16 @@ const loadPage = async (): Promise<void> => {
   } catch (err) {
     status = {
       kind: "unsupported",
-      message:
-        err instanceof Error ? err.message : "No se pudo leer el contenido.",
+      message: err instanceof Error ? err.message : "No se pudo leer el contenido.",
     }
     return
   }
   if (!html) {
-    status = {
-      kind: "unsupported",
-      message: "La página no entregó contenido.",
-    }
+    status = { kind: "unsupported", message: "La página no entregó contenido." }
     return
   }
   const doc = new DOMParser().parseFromString(html, "text/html")
-  const data = parseTikrPage(doc.body)
+  const data = parseTikrPage(doc.body, new Date().getUTCFullYear(), section)
   if (!data.ticker || data.table.fiscalYears.length === 0 || !data.unit) {
     status = {
       kind: "unsupported",
@@ -82,19 +87,36 @@ const loadPage = async (): Promise<void> => {
     }
     return
   }
-  const years = mapTikrToPayload(section, data.table, data.unit)
-  status = { kind: "ready", preview: { section, data, years } }
+  if (section === "estimates") {
+    const years = mapTikrEstimatesToPayload(data.table)
+    status = {
+      kind: "ready",
+      preview: { kind: "estimates", section, data, years },
+    }
+  } else {
+    const years = mapTikrToPayload(section, data.table, data.unit)
+    status = {
+      kind: "ready",
+      preview: { kind: "financials", section, data, years },
+    }
+  }
 }
 
 const send = async (preview: Preview): Promise<void> => {
   status = { kind: "sending", preview }
-  const payload: IngestPayload = { years: preview.years }
-  if (preview.data.currentPrice !== null && preview.data.currentPrice > 0) {
-    payload.currentPrice = preview.data.currentPrice
-  }
   const ticker = preview.data.ticker ?? ""
   const apiUrl = await getApiUrl()
-  const result = await sendIngest(apiUrl, ticker, payload)
+  let result: { ok: true } | { ok: false; status: number | null; message: string }
+  if (preview.kind === "estimates") {
+    const payload: EstimatesPayload = { source: "tikr", years: preview.years }
+    result = await sendEstimates(apiUrl, ticker, payload)
+  } else {
+    const payload: IngestPayload = { years: preview.years }
+    if (preview.data.currentPrice !== null && preview.data.currentPrice > 0) {
+      payload.currentPrice = preview.data.currentPrice
+    }
+    result = await sendIngest(apiUrl, ticker, payload)
+  }
   if (result.ok) {
     status = { kind: "success", ticker, section: preview.section }
   } else {
