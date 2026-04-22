@@ -1,4 +1,11 @@
-const HEADER_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{2})$/
+const HEADER_PATTERN = /^(\d{1,2})\/(\d{1,2})\/(\d{2})(?:\s*([AE]))?$/
+
+export type FiscalYearColumnKind = "actual" | "estimate"
+
+export type ParsedFiscalYearHeader = {
+  fiscalYearEnd: string
+  kind: FiscalYearColumnKind
+}
 
 export const pivotTwoDigitYear = (
   yy: number,
@@ -11,10 +18,10 @@ export const pivotTwoDigitYear = (
 export const parseFiscalYearHeader = (
   header: string,
   referenceYear = new Date().getUTCFullYear(),
-): string | null => {
+): ParsedFiscalYearHeader | null => {
   const match = HEADER_PATTERN.exec(header.trim())
   if (!match) return null
-  const [, mm, dd, yy] = match
+  const [, mm, dd, yy, suffix] = match
   const month = Number(mm)
   const day = Number(dd)
   const shortYear = Number(yy)
@@ -31,5 +38,7 @@ export const parseFiscalYearHeader = (
   }
   const mmStr = String(month).padStart(2, "0")
   const ddStr = String(day).padStart(2, "0")
-  return `${fullYear}-${mmStr}-${ddStr}`
+  const fiscalYearEnd = `${fullYear}-${mmStr}-${ddStr}`
+  const kind: FiscalYearColumnKind = suffix === "E" ? "estimate" : "actual"
+  return { fiscalYearEnd, kind }
 }

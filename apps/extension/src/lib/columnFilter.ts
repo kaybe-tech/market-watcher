@@ -11,9 +11,9 @@ export const filterFiscalYearColumns = (
 ): FiscalYearColumn[] => {
   const result: FiscalYearColumn[] = []
   for (let index = 0; index < headers.length; index += 1) {
-    const fiscalYearEnd = parseFiscalYearHeader(headers[index], referenceYear)
-    if (fiscalYearEnd === null) continue
-    result.push({ index, fiscalYearEnd })
+    const parsed = parseFiscalYearHeader(headers[index], referenceYear)
+    if (parsed === null) continue
+    result.push({ index, fiscalYearEnd: parsed.fiscalYearEnd })
   }
   return result
 }

@@ -1,9 +1,10 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, it, test } from "bun:test"
 import {
   isVisualEmpty,
   normalizeToMillions,
   parseAndNormalize,
   parseCell,
+  parsePercentCell,
   parseUnit,
 } from "../src/lib/numberParser"
 
@@ -81,6 +82,25 @@ describe("parseAndNormalize", () => {
 
   test("propagates null", () => {
     expect(parseAndNormalize("--", "millions")).toBeNull()
+  })
+})
+
+describe("parsePercentCell", () => {
+  it("convierte 25.4% → 0.254", () => {
+    expect(parsePercentCell("25.4%")).toBeCloseTo(0.254)
+  })
+
+  it("convierte (24.8%) → -0.248 (paréntesis negativo)", () => {
+    expect(parsePercentCell("(24.8%)")).toBeCloseTo(-0.248)
+  })
+
+  it("retorna null si la celda está vacía", () => {
+    expect(parsePercentCell("--")).toBeNull()
+    expect(parsePercentCell("")).toBeNull()
+  })
+
+  it("retorna null si no tiene el símbolo %", () => {
+    expect(parsePercentCell("25.4")).toBeNull()
   })
 })
 
