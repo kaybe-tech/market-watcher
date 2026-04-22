@@ -107,6 +107,8 @@ export type CompanyView = {
   latestFiscalYearEnd: string | null
   currentPrice: number | null
   valuation: ValuationRow | null
+  valuationWithEstimates: ValuationRow | null
+  availableEstimateSources: string[]
   pending: boolean
   valuationInProgress: boolean
   missing?: MissingSummary
@@ -213,7 +215,12 @@ export class Company {
       ticker,
       latestFiscalYearEnd: state.latestFiscalYearEnd,
       currentPrice: state.currentPrice,
-      valuation: this.repository.getLatestValuation(ticker),
+      valuation: this.repository.getLatestValuationBySource(ticker, "auto"),
+      valuationWithEstimates: this.repository.getLatestValuationBySource(
+        ticker,
+        "merged_estimates",
+      ),
+      availableEstimateSources: this.repository.listSourcesForTicker(ticker),
       pending: state.pendingValuation,
       valuationInProgress: this.hasValuationInProgress(ticker),
     }

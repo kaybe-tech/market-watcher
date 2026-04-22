@@ -3,6 +3,7 @@ import type { CompanyValuation } from "@market-watcher/valuation-engine"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { createApp } from "@/app"
 import { createDb } from "@/db"
+import { Company } from "@/modules/company/company"
 import { CompanyRepository } from "@/modules/company/repository"
 import { completeYearRow, fullYearPayload } from "./fixtures/company"
 import { amznFixture, toIngestBody } from "./fixtures/engine"
@@ -582,6 +583,53 @@ describe("POST /companies/:ticker/estimates", () => {
     })
     expect(res.status).toBe(200)
     expect(repository.listEstimatesForTicker("NVDA")).toHaveLength(1)
+  })
+})
+
+const setupWithCompleteFinancialsViaRoute = (ticker: string) => {
+  const db = createDb(":memory:")
+  migrate(db, { migrationsFolder })
+  const app = createApp(db)
+  const repository = new CompanyRepository(db)
+  const company = new Company(repository)
+
+  // Seed complete financials via POST so the app's internal state is consistent
+  void app.request(`/companies/${ticker}/data`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(toIngestBody(amznFixture)),
+  })
+
+  return { app, company, repository }
+}
+
+describe("GET /companies/:ticker con estimates", () => {
+  it("response incluye valuationWithEstimates cuando hay estimates", async () => {
+    const { app, company, repository } = setupWithCompleteFinancialsViaRoute("AMZN")
+    await waitForBackgroundValuation(repository, "AMZN")
+
+    company.ingestEstimates("AMZN", {
+      source: "tikr",
+      years: [{ fiscalYearEnd: "2026-12-31", salesGrowth: 0.15, ebitMargin: 0.10 }],
+    })
+    await company.valuate("AMZN")
+
+    const res = await app.request("/companies/AMZN")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.valuation).not.toBeNull()
+    expect(body.valuationWithEstimates).not.toBeNull()
+    expect(body.availableEstimateSources).toEqual(["tikr"])
+  })
+
+  it("valuationWithEstimates es null cuando no hay estimates", async () => {
+    const { app, repository } = setupWithCompleteFinancialsViaRoute("AMZN")
+    await waitForBackgroundValuation(repository, "AMZN")
+
+    const res = await app.request("/companies/AMZN")
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.valuationWithEstimates).toBeNull()
+    expect(body.availableEstimateSources).toEqual([])
   })
 })
 
