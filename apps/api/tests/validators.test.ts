@@ -390,3 +390,58 @@ describe("tickerParamSchema — casos borde", () => {
     expect(result.success).toBe(true)
   })
 })
+
+import { estimatesBodySchema } from "@/modules/company/validators"
+
+describe("estimatesBodySchema", () => {
+  it("acepta payload mínimo con solo source", () => {
+    const result = v.safeParse(estimatesBodySchema, { source: "tikr" })
+    expect(result.success).toBe(true)
+  })
+
+  it("acepta payload con years", () => {
+    const result = v.safeParse(estimatesBodySchema, {
+      source: "tikr",
+      years: [
+        {
+          fiscalYearEnd: "2027-01-31",
+          salesGrowth: 0.45,
+          ebitMargin: 0.62,
+        },
+      ],
+    })
+    expect(result.success).toBe(true)
+  })
+
+  it("rechaza source vacío", () => {
+    const result = v.safeParse(estimatesBodySchema, { source: "" })
+    expect(result.success).toBe(false)
+  })
+
+  it("rechaza fiscalYearEnd mal formado", () => {
+    const result = v.safeParse(estimatesBodySchema, {
+      source: "tikr",
+      years: [{ fiscalYearEnd: "2027-13-40" }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it("rechaza campos desconocidos", () => {
+    const result = v.safeParse(estimatesBodySchema, {
+      source: "tikr",
+      years: [{ fiscalYearEnd: "2027-01-31", unknownField: 1 }],
+    })
+    expect(result.success).toBe(false)
+  })
+
+  it("rechaza fiscalYearEnd duplicados", () => {
+    const result = v.safeParse(estimatesBodySchema, {
+      source: "tikr",
+      years: [
+        { fiscalYearEnd: "2027-01-31", salesGrowth: 0.1 },
+        { fiscalYearEnd: "2027-01-31", ebitMargin: 0.5 },
+      ],
+    })
+    expect(result.success).toBe(false)
+  })
+})
