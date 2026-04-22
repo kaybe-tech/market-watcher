@@ -9,7 +9,7 @@ import { mapTikrEstimatesToPayload } from "../sources/tikr/estimatesFieldMapper"
 import { mapTikrToPayload } from "../sources/tikr/fieldMapper"
 import type { TikrSection } from "../sources/tikr/urlMatcher"
 import { matchTikrUrl } from "../sources/tikr/urlMatcher"
-import { getApiUrl } from "../storage/settings"
+import { getApiUrl, getEstimateYearsLimit } from "../storage/settings"
 
 const SECTION_LABEL: Record<TikrSection, string> = {
   incomeStatement: "Income Statement",
@@ -88,7 +88,8 @@ const loadPage = async (): Promise<void> => {
     return
   }
   if (section === "estimates") {
-    const years = mapTikrEstimatesToPayload(data.table)
+    const limit = await getEstimateYearsLimit()
+    const years = mapTikrEstimatesToPayload(data.table, limit)
     status = {
       kind: "ready",
       preview: { kind: "estimates", section, data, years },

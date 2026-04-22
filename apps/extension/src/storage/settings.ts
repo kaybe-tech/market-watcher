@@ -1,6 +1,11 @@
 const API_URL_KEY = "apiUrl"
 export const DEFAULT_API_URL = "http://localhost:3000"
 
+const ESTIMATE_YEARS_LIMIT_KEY = "estimateYearsLimit"
+export const DEFAULT_ESTIMATE_YEARS_LIMIT = 3
+const MIN_ESTIMATE_YEARS_LIMIT = 1
+const MAX_ESTIMATE_YEARS_LIMIT = 10
+
 type StorageArea = {
   get(keys: string | string[]): Promise<Record<string, unknown>>
   set(items: Record<string, unknown>): Promise<void>
@@ -39,4 +44,25 @@ export const isValidApiUrl = (value: string): boolean => {
   } catch {
     return false
   }
+}
+
+export const isValidEstimateYearsLimit = (value: number): boolean =>
+  Number.isInteger(value) &&
+  value >= MIN_ESTIMATE_YEARS_LIMIT &&
+  value <= MAX_ESTIMATE_YEARS_LIMIT
+
+export const getEstimateYearsLimit = async (): Promise<number> => {
+  const storage = getStorage()
+  if (!storage) return DEFAULT_ESTIMATE_YEARS_LIMIT
+  const result = await storage.get(ESTIMATE_YEARS_LIMIT_KEY)
+  const value = result[ESTIMATE_YEARS_LIMIT_KEY]
+  return typeof value === "number" && isValidEstimateYearsLimit(value)
+    ? value
+    : DEFAULT_ESTIMATE_YEARS_LIMIT
+}
+
+export const setEstimateYearsLimit = async (value: number): Promise<void> => {
+  const storage = getStorage()
+  if (!storage) return
+  await storage.set({ [ESTIMATE_YEARS_LIMIT_KEY]: value })
 }

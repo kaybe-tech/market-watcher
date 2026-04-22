@@ -48,6 +48,7 @@ const findRow = (
 
 export const mapTikrEstimatesToPayload = (
   table: ParsedTable,
+  maxYears?: number,
 ): EstimateYearPayload[] => {
   const rows: RowIndex[] = table.rows.map((r) => ({
     label: trimLabel(r.label),
@@ -65,7 +66,7 @@ export const mapTikrEstimatesToPayload = (
   const ebitMarginRow =
     ebitHit && findSub(rows, ebitHit.index, SUB_EBIT_MARGINS)
 
-  return table.fiscalYears.map((fiscalYearEnd, columnIndex) => {
+  const years = table.fiscalYears.map((fiscalYearEnd, columnIndex) => {
     const year: EstimateYearPayload = { fiscalYearEnd }
 
     const salesGrowth = salesGrowthRow
@@ -98,4 +99,9 @@ export const mapTikrEstimatesToPayload = (
 
     return year
   })
+
+  if (maxYears === undefined) return years
+  return [...years]
+    .sort((a, b) => a.fiscalYearEnd.localeCompare(b.fiscalYearEnd))
+    .slice(0, maxYears)
 }
