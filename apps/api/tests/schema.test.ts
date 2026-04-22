@@ -5,6 +5,7 @@ import { createDb } from "@/db"
 import {
   tickerState,
   valuations,
+  yearlyEstimates,
   yearlyFinancials,
 } from "@/modules/company/schema"
 
@@ -154,5 +155,45 @@ describe("valuations", () => {
     expect(fetched?.fiscalYearEnd).toBe("2025-09-27")
     expect(fetched?.createdAt).toBe("2026-04-19T12:00:00.000Z")
     expect(fetched?.result).toEqual(result)
+  })
+})
+
+describe("yearly_estimates schema", () => {
+  it("permite upsert con clave (ticker, fiscalYearEnd, source)", () => {
+    const db = createDb(":memory:")
+    migrate(db, { migrationsFolder })
+    const sqlite = (db as unknown as { $client: { exec: (sql: string) => void; query: (sql: string) => { all: () => unknown[] } } }).$client
+
+    sqlite.exec(
+      `INSERT INTO yearly_estimates (ticker, fiscal_year_end, source, captured_at, sales_growth, ebit_margin, tax_rate, capex_maintenance_sales_ratio, net_debt_ebitda_ratio)
+       VALUES ('NVDA', '2027-01-31', 'tikr', '2026-04-22T10:00:00.000Z', 0.45, 0.62, 0.18, 0.04, -0.5)`,
+    )
+
+    const rows = sqlite.query("SELECT * FROM yearly_estimates").all() as Array<Record<string, unknown>>
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      ticker: "NVDA",
+      fiscal_year_end: "2027-01-31",
+      source: "tikr",
+      sales_growth: 0.45,
+      ebit_margin: 0.62,
+      tax_rate: 0.18,
+      capex_maintenance_sales_ratio: 0.04,
+      net_debt_ebitda_ratio: -0.5,
+    })
+  })
+
+  it("valuations tiene columna source con default 'auto'", () => {
+    const db = createDb(":memory:")
+    migrate(db, { migrationsFolder })
+    const sqlite = (db as unknown as { $client: { exec: (sql: string) => void; query: (sql: string) => { all: () => unknown[] } } }).$client
+
+    sqlite.exec(
+      `INSERT INTO valuations (ticker, fiscal_year_end, result, created_at)
+       VALUES ('NVDA', '2026-01-31', '{}', '2026-04-22T10:00:00.000Z')`,
+    )
+
+    const rows = sqlite.query("SELECT source FROM valuations").all() as Array<{ source: string }>
+    expect(rows[0]?.source).toBe("auto")
   })
 })

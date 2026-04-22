@@ -56,8 +56,31 @@ export const valuations = sqliteTable("valuations", {
   fiscalYearEnd: text("fiscal_year_end").notNull(),
   result: text("result", { mode: "json" }).$type<CompanyValuation>().notNull(),
   createdAt: text("created_at").notNull(),
+  source: text("source").notNull().default("auto"),
 })
+
+export const yearlyEstimates = sqliteTable(
+  "yearly_estimates",
+  {
+    ticker: text("ticker").notNull(),
+    fiscalYearEnd: text("fiscal_year_end").notNull(),
+    source: text("source").notNull(),
+    capturedAt: text("captured_at").notNull(),
+
+    salesGrowth: real("sales_growth"),
+    ebitMargin: real("ebit_margin"),
+    taxRate: real("tax_rate"),
+    capexMaintenanceSalesRatio: real("capex_maintenance_sales_ratio"),
+    netDebtEbitdaRatio: real("net_debt_ebitda_ratio"),
+  },
+  (table) => [
+    primaryKey({
+      columns: [table.ticker, table.fiscalYearEnd, table.source],
+    }),
+  ],
+)
 
 export type TickerStateRow = InferSelectModel<typeof tickerState>
 export type YearlyFinancialsRow = InferSelectModel<typeof yearlyFinancials>
 export type ValuationRow = InferSelectModel<typeof valuations>
+export type YearlyEstimatesRow = InferSelectModel<typeof yearlyEstimates>
