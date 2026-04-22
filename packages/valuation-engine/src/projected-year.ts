@@ -90,46 +90,45 @@ export class ProjectedYear {
     const { year, currentPrice, prev, assumptions, historical } = inputs
     this.year = year
 
+    const ya = assumptions.forYear(year)
+    const yaIs = ya.incomeStatement
+    const yaFcf = ya.freeCashFlow
+    const yaRoic = ya.roic
+
     const prevIs = prev.incomeStatement
     const prevFcf = prev.freeCashFlow
     const prevRoic = prev.roic
     const prevValuation = prev.valuation
 
     // Pasos 1-11: IS parcial (hasta EBITDA)
-    const sales = ProjectedYear.computeSales(
-      prevIs.sales,
-      assumptions.incomeStatement.salesGrowth,
-    )
-    const salesYoYGrowth = assumptions.incomeStatement.salesGrowth
+    const sales = ProjectedYear.computeSales(prevIs.sales, yaIs.salesGrowth)
+    const salesYoYGrowth = yaIs.salesGrowth
     const depreciationAmortization =
       ProjectedYear.computeDepreciationAmortization(
         prevIs.depreciationAmortization,
-        assumptions.incomeStatement.salesGrowth,
+        yaIs.salesGrowth,
       )
-    const ebit = ProjectedYear.computeEbit(
-      sales,
-      assumptions.incomeStatement.ebitMargin,
-    )
+    const ebit = ProjectedYear.computeEbit(sales, yaIs.ebitMargin)
     const ebitda = ProjectedYear.computeEbitda(ebit, depreciationAmortization)
     const ebitdaMargin = ProjectedYear.computeEbitdaMargin(ebitda, sales)
     const ebitdaYoYGrowth = ProjectedYear.computeYoYGrowth(
       ebitda,
       prevIs.ebitda,
     )
-    const ebitMargin = assumptions.incomeStatement.ebitMargin
+    const ebitMargin = yaIs.ebitMargin
     const ebitYoYGrowth = ProjectedYear.computeYoYGrowth(ebit, prevIs.ebit)
     const fullyDilutedShares = ProjectedYear.computeFullyDilutedShares(
       prevIs.fullyDilutedShares,
-      assumptions.incomeStatement.shareGrowth,
+      yaIs.shareGrowth,
     )
-    const fullyDilutedSharesYoYGrowth = assumptions.incomeStatement.shareGrowth
+    const fullyDilutedSharesYoYGrowth = yaIs.shareGrowth
 
     // Pasos 12-14: Valuation parcial (netDebt, netDebtEbitdaRatio, marketCap)
     const netDebt = ProjectedYear.computeNetDebt(
-      assumptions.roic.netDebtEbitdaRatio,
+      yaRoic.netDebtEbitdaRatio,
       ebitda,
     )
-    const netDebtEbitdaRatio = assumptions.roic.netDebtEbitdaRatio
+    const netDebtEbitdaRatio = yaRoic.netDebtEbitdaRatio
     const marketCap = ProjectedYear.computeMarketCap(
       currentPrice,
       fullyDilutedShares,
@@ -171,12 +170,12 @@ export class ProjectedYear {
 
     // Pasos 21-33: IS completo (interest en adelante)
     const interestExpense = ProjectedYear.computeInterestExpense(
-      assumptions.incomeStatement.interestExpenseRate,
+      yaIs.interestExpenseRate,
       shortTermDebt,
       longTermDebt,
     )
     const interestIncome = ProjectedYear.computeInterestIncome(
-      assumptions.incomeStatement.interestIncomeRate,
+      yaIs.interestIncomeRate,
       cashMktSec,
     )
     const totalInterest = ProjectedYear.computeTotalInterest(
@@ -189,9 +188,9 @@ export class ProjectedYear {
     )
     const taxExpense = ProjectedYear.computeTaxExpense(
       earningsBeforeTaxes,
-      assumptions.incomeStatement.taxRate,
+      yaIs.taxRate,
     )
-    const taxRate = assumptions.incomeStatement.taxRate
+    const taxRate = yaIs.taxRate
     const consolidatedNetIncome = ProjectedYear.computeConsolidatedNetIncome(
       earningsBeforeTaxes,
       taxExpense,
@@ -243,16 +242,18 @@ export class ProjectedYear {
     // Pasos 34-49: FreeCashFlow (sin netChangeInCash)
     const fcfEbitda = ebitda
     const capexMaintenance = ProjectedYear.computeCapexMaintenance(
-      assumptions.freeCashFlow.capexMaintenanceSalesRatio,
+      yaFcf.capexMaintenanceSalesRatio,
       sales,
     )
     const fcfTotalInterest = totalInterest
     const taxesPaid = taxExpense
-    const changeInWorkingCapital = ProjectedYear.computeChangeInWorkingCapital(
-      prev,
-      assumptions.freeCashFlow.cwcSalesRatio,
-      sales,
-    )
+    const changeInWorkingCapital =
+      ya.changeInWorkingCapitalOverride ??
+      ProjectedYear.computeChangeInWorkingCapital(
+        prev,
+        yaFcf.cwcSalesRatio,
+        sales,
+      )
     const workingCapital = ProjectedYear.computeWorkingCapital(
       prevFcf.workingCapital,
       changeInWorkingCapital,
@@ -288,17 +289,17 @@ export class ProjectedYear {
     const ebitAfterTax = ProjectedYear.computeEbitAfterTax(ebit, taxRate)
     const currentOperatingLeases = ProjectedYear.computeCurrentOperatingLeases(
       prevRoic.currentOperatingLeases,
-      assumptions.incomeStatement.salesGrowth,
+      yaIs.salesGrowth,
     )
     const nonCurrentOperatingLeases =
       ProjectedYear.computeNonCurrentOperatingLeases(
         prevRoic.nonCurrentOperatingLeases,
-        assumptions.incomeStatement.salesGrowth,
+        yaIs.salesGrowth,
       )
     const equity = ProjectedYear.computeEquity(
       prevRoic.equity,
       netIncome,
-      assumptions.incomeStatement.shareGrowth,
+      yaIs.shareGrowth,
       marketCap,
       historical,
       fcf,

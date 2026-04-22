@@ -1,4 +1,5 @@
 import type { HistoricalYear } from "./historical-year"
+import type { TargetMultiplesOverride } from "./overrides"
 import type { ProjectedYear } from "./projected-year"
 
 export interface MultipleSet {
@@ -12,6 +13,7 @@ export interface MultiplesInputs {
   currentPrice: number
   lastHistYear: HistoricalYear
   firstProjYear: ProjectedYear
+  targetOverrides?: TargetMultiplesOverride
 }
 
 export class Multiples {
@@ -20,7 +22,8 @@ export class Multiples {
   readonly target: MultipleSet
 
   constructor(inputs: MultiplesInputs) {
-    const { currentPrice, lastHistYear, firstProjYear } = inputs
+    const { currentPrice, lastHistYear, firstProjYear, targetOverrides } =
+      inputs
 
     const ltmPer = Multiples.computePer(
       currentPrice,
@@ -68,12 +71,12 @@ export class Multiples {
       evEbit: ntmEvEbit,
     }
 
-    const targetPer = ntmPer
+    const baseTargetPer = ntmPer
     this.target = {
-      per: targetPer,
-      evFcf: targetPer,
-      evEbitda: ntmEvEbitda,
-      evEbit: ntmEvEbit,
+      per: targetOverrides?.per ?? baseTargetPer,
+      evFcf: targetOverrides?.evFcf ?? baseTargetPer,
+      evEbitda: targetOverrides?.evEbitda ?? ntmEvEbitda,
+      evEbit: targetOverrides?.evEbit ?? ntmEvEbit,
     }
   }
 

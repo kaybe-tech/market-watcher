@@ -1,4 +1,5 @@
 import type { HistoricalYear } from "./historical-year"
+import type { ValuationOverrides } from "./overrides"
 
 export interface IncomeStatementAssumptions {
   salesGrowth: number
@@ -18,8 +19,16 @@ export interface RoicAssumptions {
   netDebtEbitdaRatio: number
 }
 
+export interface ResolvedYearAssumptions {
+  incomeStatement: IncomeStatementAssumptions
+  freeCashFlow: FreeCashFlowAssumptions
+  roic: RoicAssumptions
+  changeInWorkingCapitalOverride: number | null
+}
+
 export interface ProjectionAssumptionsInputs {
   historical: Record<number, HistoricalYear>
+  overrides?: ValuationOverrides
 }
 
 export class ProjectionAssumptions {
@@ -27,11 +36,19 @@ export class ProjectionAssumptions {
   readonly freeCashFlow: FreeCashFlowAssumptions
   readonly roic: RoicAssumptions
 
+  private readonly firstProjectedYear: number
+  private readonly overrides: ValuationOverrides | undefined
+  private readonly resolvedCache = new Map<number, ResolvedYearAssumptions>()
+
   constructor(inputs: ProjectionAssumptionsInputs) {
     const years = ProjectionAssumptions.sortedYears(inputs.historical)
     if (years.length === 0) {
       throw new Error("ProjectionAssumptions requires at least one year")
     }
+
+    this.overrides = inputs.overrides
+    const last = years[years.length - 1] as HistoricalYear
+    this.firstProjectedYear = last.year + 1
 
     this.incomeStatement = ProjectionAssumptions.buildIncomeStatement(years)
     this.freeCashFlow = ProjectionAssumptions.buildFreeCashFlow(
@@ -39,6 +56,56 @@ export class ProjectionAssumptions {
       this.incomeStatement.salesGrowth,
     )
     this.roic = ProjectionAssumptions.buildRoic(years)
+  }
+
+  forYear(year: number): ResolvedYearAssumptions {
+    const cached = this.resolvedCache.get(year)
+    if (cached) return cached
+
+    const yearOverride = this.overrides?.projections?.[year]
+
+    let prevIncomeStatement: IncomeStatementAssumptions
+    let prevFreeCashFlow: FreeCashFlowAssumptions
+    let prevRoic: RoicAssumptions
+
+    if (year <= this.firstProjectedYear) {
+      prevIncomeStatement = this.incomeStatement
+      prevFreeCashFlow = this.freeCashFlow
+      prevRoic = this.roic
+    } else {
+      const prev = this.forYear(year - 1)
+      prevIncomeStatement = prev.incomeStatement
+      prevFreeCashFlow = prev.freeCashFlow
+      prevRoic = prev.roic
+    }
+
+    const resolved: ResolvedYearAssumptions = {
+      incomeStatement: {
+        salesGrowth:
+          yearOverride?.salesGrowth ?? prevIncomeStatement.salesGrowth,
+        ebitMargin: yearOverride?.ebitMargin ?? prevIncomeStatement.ebitMargin,
+        taxRate: yearOverride?.taxRate ?? prevIncomeStatement.taxRate,
+        shareGrowth:
+          yearOverride?.shareGrowth ?? prevIncomeStatement.shareGrowth,
+        interestExpenseRate: prevIncomeStatement.interestExpenseRate,
+        interestIncomeRate: prevIncomeStatement.interestIncomeRate,
+      },
+      freeCashFlow: {
+        capexMaintenanceSalesRatio:
+          yearOverride?.capexMaintenanceSalesRatio ??
+          prevFreeCashFlow.capexMaintenanceSalesRatio,
+        cwcSalesRatio: prevFreeCashFlow.cwcSalesRatio,
+      },
+      roic: {
+        netDebtEbitdaRatio:
+          yearOverride?.netDebtEbitdaRatio ?? prevRoic.netDebtEbitdaRatio,
+      },
+      changeInWorkingCapitalOverride:
+        yearOverride?.changeInWorkingCapital ?? null,
+    }
+
+    this.resolvedCache.set(year, resolved)
+    return resolved
   }
 
   private static sortedYears(

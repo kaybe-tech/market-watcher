@@ -6,6 +6,7 @@ import {
 } from "./historical-year"
 import { IntrinsicValue } from "./intrinsic-value"
 import { Multiples } from "./multiples"
+import type { ValuationOverrides } from "./overrides"
 import { ProjectedYear } from "./projected-year"
 import { ProjectionAssumptions } from "./projection-assumptions"
 
@@ -30,6 +31,7 @@ export interface CompanyValuationInputs {
   name?: string
   currentPrice: number
   financials: Record<number, CompanyYearFinancials>
+  overrides?: ValuationOverrides
 }
 
 const PROJECTION_HORIZON = 5
@@ -45,7 +47,7 @@ export class CompanyValuation {
   readonly intrinsicValue: IntrinsicValue
 
   constructor(inputs: CompanyValuationInputs) {
-    const { ticker, name, currentPrice, financials } = inputs
+    const { ticker, name, currentPrice, financials, overrides } = inputs
     if (currentPrice <= 0) {
       throw new Error("CompanyValuation requires currentPrice > 0")
     }
@@ -56,6 +58,7 @@ export class CompanyValuation {
     this.historical = CompanyValuation.buildHistorical(financials, currentPrice)
     this.assumptions = new ProjectionAssumptions({
       historical: this.historical,
+      overrides,
     })
 
     const lastHistoricalYear = CompanyValuation.maxYear(this.historical)
@@ -76,6 +79,7 @@ export class CompanyValuation {
       currentPrice,
       lastHistYear: lastHistorical,
       firstProjYear: firstProjected,
+      targetOverrides: overrides?.targetMultiples,
     })
 
     this.intrinsicValue = new IntrinsicValue({

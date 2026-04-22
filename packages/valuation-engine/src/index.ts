@@ -24,6 +24,11 @@ export { IntrinsicValue } from "./intrinsic-value"
 export type { MultipleSet, MultiplesInputs } from "./multiples"
 export { Multiples } from "./multiples"
 export type {
+  ProjectionYearOverride,
+  TargetMultiplesOverride,
+  ValuationOverrides,
+} from "./overrides"
+export type {
   ProjectedFreeCashFlow,
   ProjectedIncomeStatement,
   ProjectedRoic,
@@ -35,6 +40,7 @@ export type {
   FreeCashFlowAssumptions,
   IncomeStatementAssumptions,
   ProjectionAssumptionsInputs,
+  ResolvedYearAssumptions,
   RoicAssumptions,
 } from "./projection-assumptions"
 export { ProjectionAssumptions } from "./projection-assumptions"
