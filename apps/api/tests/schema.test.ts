@@ -127,7 +127,7 @@ describe("ticker_state", () => {
 })
 
 describe("valuations", () => {
-  it("persiste y recupera el campo result como JSON tipado", () => {
+  it("persiste y recupera el campo result como JSON tipado y source por defecto", () => {
     const db = setup()
 
     const result = {
@@ -155,45 +155,47 @@ describe("valuations", () => {
     expect(fetched?.fiscalYearEnd).toBe("2025-09-27")
     expect(fetched?.createdAt).toBe("2026-04-19T12:00:00.000Z")
     expect(fetched?.result).toEqual(result)
+    expect(fetched?.source).toBe("auto")
   })
 })
 
-describe("yearly_estimates schema", () => {
-  it("permite upsert con clave (ticker, fiscalYearEnd, source)", () => {
-    const db = createDb(":memory:")
-    migrate(db, { migrationsFolder })
-    const sqlite = (db as unknown as { $client: { exec: (sql: string) => void; query: (sql: string) => { all: () => unknown[] } } }).$client
+describe("yearly_estimates", () => {
+  it("permite insertar y leer una fila de yearly_estimates", () => {
+    const db = setup()
 
-    sqlite.exec(
-      `INSERT INTO yearly_estimates (ticker, fiscal_year_end, source, captured_at, sales_growth, ebit_margin, tax_rate, capex_maintenance_sales_ratio, net_debt_ebitda_ratio)
-       VALUES ('NVDA', '2027-01-31', 'tikr', '2026-04-22T10:00:00.000Z', 0.45, 0.62, 0.18, 0.04, -0.5)`,
-    )
-
-    const rows = sqlite.query("SELECT * FROM yearly_estimates").all() as Array<Record<string, unknown>>
-    expect(rows).toHaveLength(1)
-    expect(rows[0]).toMatchObject({
+    const row = {
       ticker: "NVDA",
-      fiscal_year_end: "2027-01-31",
+      fiscalYearEnd: "2027-01-31",
       source: "tikr",
-      sales_growth: 0.45,
-      ebit_margin: 0.62,
-      tax_rate: 0.18,
-      capex_maintenance_sales_ratio: 0.04,
-      net_debt_ebitda_ratio: -0.5,
-    })
+      capturedAt: "2026-04-22T10:00:00.000Z",
+      salesGrowth: 0.45,
+      ebitMargin: 0.62,
+      taxRate: 0.18,
+      capexMaintenanceSalesRatio: 0.04,
+      netDebtEbitdaRatio: -0.5,
+    }
+    db.insert(yearlyEstimates).values(row).run()
+
+    const [fetched] = db.select().from(yearlyEstimates).all()
+    expect(fetched).toMatchObject(row)
   })
 
-  it("valuations tiene columna source con default 'auto'", () => {
-    const db = createDb(":memory:")
-    migrate(db, { migrationsFolder })
-    const sqlite = (db as unknown as { $client: { exec: (sql: string) => void; query: (sql: string) => { all: () => unknown[] } } }).$client
+  it("rechaza segundo insert con misma clave (ticker, fiscalYearEnd, source)", () => {
+    const db = setup()
 
-    sqlite.exec(
-      `INSERT INTO valuations (ticker, fiscal_year_end, result, created_at)
-       VALUES ('NVDA', '2026-01-31', '{}', '2026-04-22T10:00:00.000Z')`,
-    )
+    const pk = {
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "tikr",
+      capturedAt: "2026-04-22T10:00:00.000Z",
+    }
+    db.insert(yearlyEstimates).values(pk).run()
 
-    const rows = sqlite.query("SELECT source FROM valuations").all() as Array<{ source: string }>
-    expect(rows[0]?.source).toBe("auto")
+    expect(() =>
+      db
+        .insert(yearlyEstimates)
+        .values({ ...pk, salesGrowth: 0.5 })
+        .run(),
+    ).toThrow()
   })
 })
