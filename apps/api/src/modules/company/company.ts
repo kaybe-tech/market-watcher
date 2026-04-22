@@ -98,10 +98,8 @@ export type CompanyView = {
 
 const MIN_CONSECUTIVE_YEARS_FOR_VALUATION = 2
 
-const previousFiscalYearEnd = (fiscalYearEnd: string): string => {
-  const year = Number.parseInt(fiscalYearEnd.slice(0, 4), 10)
-  return `${year - 1}${fiscalYearEnd.slice(4)}`
-}
+const fiscalYearOf = (fiscalYearEnd: string): number =>
+  Number.parseInt(fiscalYearEnd.slice(0, 4), 10)
 
 export class Company {
   private readonly repository: CompanyRepository
@@ -352,19 +350,20 @@ export class Company {
   ): YearlyFinancialsRow[] {
     if (latestFiscalYearEnd === null) return []
 
-    const byFiscalYearEnd = new Map<string, YearlyFinancialsRow>()
-    for (const row of rows) {
-      byFiscalYearEnd.set(row.fiscalYearEnd, row)
-    }
+    const sorted = rows
+      .filter((row) => row.fiscalYearEnd <= latestFiscalYearEnd)
+      .sort((a, b) => b.fiscalYearEnd.localeCompare(a.fiscalYearEnd))
 
     const series: YearlyFinancialsRow[] = []
-    let cursor = latestFiscalYearEnd
+    let expectedYear: number | null = null
 
-    while (series.length < MAX_CONSECUTIVE_YEARS) {
-      const row = byFiscalYearEnd.get(cursor)
-      if (!row || !this.isYearComplete(row)) break
+    for (const row of sorted) {
+      if (series.length >= MAX_CONSECUTIVE_YEARS) break
+      const year = fiscalYearOf(row.fiscalYearEnd)
+      if (expectedYear !== null && year !== expectedYear) break
+      if (!this.isYearComplete(row)) break
       series.push(row)
-      cursor = previousFiscalYearEnd(cursor)
+      expectedYear = year - 1
     }
 
     return series

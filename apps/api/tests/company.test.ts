@@ -287,6 +287,37 @@ describe("Company - consolidateConsecutiveYears", () => {
     const series = company.consolidateConsecutiveYears(rows, null)
     expect(series).toEqual([])
   })
+
+  it("fiscal years con drift de día/mes (estilo NVDA) → serie completa", () => {
+    const { company } = setup()
+    const rows = [
+      completeYearRow("NVDA", "2026-01-25"),
+      completeYearRow("NVDA", "2025-01-26"),
+      completeYearRow("NVDA", "2024-01-28"),
+      completeYearRow("NVDA", "2023-01-29"),
+    ]
+    const series = company.consolidateConsecutiveYears(rows, "2026-01-25")
+    expect(series.map((r) => r.fiscalYearEnd)).toEqual([
+      "2026-01-25",
+      "2025-01-26",
+      "2024-01-28",
+      "2023-01-29",
+    ])
+  })
+
+  it("salto de año fiscal (falta un año entero) → serie corta hasta el gap", () => {
+    const { company } = setup()
+    const rows = [
+      completeYearRow("NVDA", "2026-01-25"),
+      completeYearRow("NVDA", "2025-01-26"),
+      completeYearRow("NVDA", "2023-01-29"),
+    ]
+    const series = company.consolidateConsecutiveYears(rows, "2026-01-25")
+    expect(series.map((r) => r.fiscalYearEnd)).toEqual([
+      "2026-01-25",
+      "2025-01-26",
+    ])
+  })
 })
 
 describe("Company - isYearComplete", () => {
