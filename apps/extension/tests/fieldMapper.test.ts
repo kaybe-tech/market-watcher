@@ -30,6 +30,9 @@ describe("mapTikrToPayload", () => {
         interestExpense: -262,
         taxExpense: -187,
         fullyDilutedShares: 2507,
+        depreciationAmortization: 0,
+        interestIncome: 0,
+        minorityInterests: 0,
       },
     })
     expect(result[1]?.incomeStatement?.sales).toBe(60922)
@@ -59,10 +62,15 @@ describe("mapTikrToPayload", () => {
         marketableSecurities: 18704,
         longTermDebt: 8459,
         equity: 42978,
+        shortTermDebt: 0,
+        currentOperatingLeases: 0,
+        nonCurrentOperatingLeases: 0,
       },
       freeCashFlow: {
         inventories: 5282,
         accountsPayable: 2699,
+        accountsReceivable: 0,
+        unearnedRevenue: 0,
       },
     })
   })
@@ -109,7 +117,7 @@ describe("mapTikrToPayload", () => {
     expect(result[0]?.incomeStatement?.depreciationAmortization).toBe(1508)
   })
 
-  test("omits fields with empty or dash values", () => {
+  test("omite solo campos no parseables; los ausentes pasan a 0", () => {
     const result = mapTikrToPayload(
       "incomeStatement",
       {
@@ -125,7 +133,14 @@ describe("mapTikrToPayload", () => {
 
     expect(result[0]).toEqual({
       fiscalYearEnd: "2023-01-29",
-      incomeStatement: { sales: 10000 },
+      incomeStatement: {
+        sales: 10000,
+        depreciationAmortization: 0,
+        ebit: 0,
+        interestIncome: 0,
+        taxExpense: 0,
+        fullyDilutedShares: 0,
+      },
     })
   })
 

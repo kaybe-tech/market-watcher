@@ -175,9 +175,15 @@ export const mapTikrToPayload = (
     const year: IngestYear = { fiscalYearEnd }
     for (const definition of fields) {
       const row = findRow(byLabel, definition.labels)
-      if (!row) continue
+      if (!row) {
+        applyValue(year, definition.group, definition.field, 0)
+        continue
+      }
       const raw = row.values[columnIndex]
-      if (raw === undefined) continue
+      if (raw === undefined) {
+        applyValue(year, definition.group, definition.field, 0)
+        continue
+      }
       const normalized = parseAndNormalize(raw, unit)
       if (normalized === null) continue
       applyValue(year, definition.group, definition.field, normalized)
