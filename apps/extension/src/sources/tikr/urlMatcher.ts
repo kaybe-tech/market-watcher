@@ -2,11 +2,13 @@ export type TikrSection =
   | "incomeStatement"
   | "balanceSheet"
   | "cashFlowStatement"
+  | "estimates"
 
 const TAB_TO_SECTION: Record<string, TikrSection> = {
   is: "incomeStatement",
   bs: "balanceSheet",
   cf: "cashFlowStatement",
+  est: "estimates",
 }
 
 export const SUPPORTED_HOST = "app.tikr.com"

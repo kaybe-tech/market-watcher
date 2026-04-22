@@ -138,6 +138,7 @@ describe("CompanyRepository - Valuation", () => {
       fiscalYearEnd: "2025-09-27",
       result: sampleValuation,
       createdAt: "2026-04-19T12:00:00.000Z",
+      source: "auto",
     })
 
     expect(inserted.id).toBeGreaterThan(0)
@@ -157,18 +158,21 @@ describe("CompanyRepository - Valuation", () => {
       fiscalYearEnd: "2024-09-28",
       result: sampleValuation,
       createdAt: "2026-01-01T00:00:00.000Z",
+      source: "auto",
     })
     repo.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2025-09-27",
       result: sampleValuation,
       createdAt: "2026-04-01T00:00:00.000Z",
+      source: "auto",
     })
     repo.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2023-09-30",
       result: sampleValuation,
       createdAt: "2026-02-15T00:00:00.000Z",
+      source: "auto",
     })
 
     const latest = repo.getLatestValuation("AAPL")
@@ -184,16 +188,124 @@ describe("CompanyRepository - Valuation", () => {
       fiscalYearEnd: "2024-09-28",
       result: sampleValuation,
       createdAt,
+      source: "auto",
     })
     const second = repo.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2025-09-27",
       result: sampleValuation,
       createdAt,
+      source: "auto",
     })
     expect(second.id).toBeGreaterThan(first.id)
 
     const latest = repo.getLatestValuation("AAPL")
     expect(latest?.id).toBe(second.id)
+  })
+})
+
+describe("CompanyRepository - yearly_estimates", () => {
+  it("upsertEstimate crea fila nueva con capturedAt", () => {
+    const repo = setup()
+    repo.upsertEstimate({
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "tikr",
+      capturedAt: "2026-04-22T10:00:00.000Z",
+      salesGrowth: 0.45,
+      ebitMargin: 0.62,
+      taxRate: null,
+      capexMaintenanceSalesRatio: null,
+      netDebtEbitdaRatio: null,
+    })
+    const rows = repo.listEstimatesForTicker("NVDA")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.salesGrowth).toBe(0.45)
+    expect(rows[0]?.ebitMargin).toBe(0.62)
+  })
+
+  it("upsertEstimate reemplaza la fila existente (PK ticker+year+source)", () => {
+    const repo = setup()
+    repo.upsertEstimate({
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "tikr",
+      capturedAt: "2026-04-22T10:00:00.000Z",
+      salesGrowth: 0.45,
+      ebitMargin: 0.62,
+      taxRate: 0.18,
+      capexMaintenanceSalesRatio: null,
+      netDebtEbitdaRatio: null,
+    })
+    repo.upsertEstimate({
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "tikr",
+      capturedAt: "2026-05-01T10:00:00.000Z",
+      salesGrowth: 0.50,
+      ebitMargin: null,
+      taxRate: null,
+      capexMaintenanceSalesRatio: 0.04,
+      netDebtEbitdaRatio: null,
+    })
+    const rows = repo.listEstimatesForTicker("NVDA")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]).toMatchObject({
+      salesGrowth: 0.50,
+      ebitMargin: null,
+      taxRate: null,
+      capexMaintenanceSalesRatio: 0.04,
+      capturedAt: "2026-05-01T10:00:00.000Z",
+    })
+  })
+
+  it("listSourcesForTicker devuelve sources distintas", () => {
+    const repo = setup()
+    repo.upsertEstimate({
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "tikr",
+      capturedAt: "2026-04-22T10:00:00.000Z",
+      salesGrowth: 0.45,
+      ebitMargin: null,
+      taxRate: null,
+      capexMaintenanceSalesRatio: null,
+      netDebtEbitdaRatio: null,
+    })
+    repo.upsertEstimate({
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "manual",
+      capturedAt: "2026-04-22T10:00:00.000Z",
+      salesGrowth: 0.50,
+      ebitMargin: null,
+      taxRate: null,
+      capexMaintenanceSalesRatio: null,
+      netDebtEbitdaRatio: null,
+    })
+    const sources = repo.listSourcesForTicker("NVDA")
+    expect(new Set(sources)).toEqual(new Set(["tikr", "manual"]))
+  })
+})
+
+describe("CompanyRepository - valuations por source", () => {
+  it("getLatestValuationBySource filtra por source", () => {
+    const repo = setup()
+    repo.insertValuation({
+      ticker: "NVDA",
+      fiscalYearEnd: "2026-01-31",
+      result: {} as never,
+      createdAt: "2026-04-22T10:00:00.000Z",
+      source: "auto",
+    })
+    repo.insertValuation({
+      ticker: "NVDA",
+      fiscalYearEnd: "2026-01-31",
+      result: {} as never,
+      createdAt: "2026-04-22T10:00:01.000Z",
+      source: "merged_estimates",
+    })
+    expect(repo.getLatestValuationBySource("NVDA", "auto")?.source).toBe("auto")
+    expect(repo.getLatestValuationBySource("NVDA", "merged_estimates")?.source).toBe("merged_estimates")
   })
 })

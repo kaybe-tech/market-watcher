@@ -1,7 +1,9 @@
+import type { ColumnFilterMode } from "../../lib/columnFilter"
 import { filterFiscalYearColumns } from "../../lib/columnFilter"
 import type { Unit } from "../../lib/numberParser"
 import { parseCell, parseUnit } from "../../lib/numberParser"
 import type { ParsedTable, TableRow } from "./fieldMapper"
+import type { TikrSection } from "./urlMatcher"
 
 export type TikrPageData = {
   ticker: string | null
@@ -42,13 +44,20 @@ const extractUnit = (root: ParentNode): Unit | null => {
   return UNIT_BUTTON_MAP[text(active).toLowerCase()] ?? null
 }
 
-const extractTable = (root: ParentNode, referenceYear: number): ParsedTable => {
+const sectionToMode = (section: TikrSection): ColumnFilterMode =>
+  section === "estimates" ? "estimates" : "historical"
+
+const extractTable = (
+  root: ParentNode,
+  referenceYear: number,
+  mode: ColumnFilterMode,
+): ParsedTable => {
   const table = root.querySelector("table.fintab")
   if (!table) return { fiscalYears: [], rows: [] }
   const headers = Array.from(table.querySelectorAll("thead th"))
     .slice(1)
     .map((cell) => text(cell))
-  const columns = filterFiscalYearColumns(headers, referenceYear)
+  const columns = filterFiscalYearColumns(headers, referenceYear, mode)
   const fiscalYears = columns.map((column) => column.fiscalYearEnd)
   const rows: TableRow[] = []
   for (const row of Array.from(table.querySelectorAll("tbody tr"))) {
@@ -66,11 +75,12 @@ const extractTable = (root: ParentNode, referenceYear: number): ParsedTable => {
 export const parseTikrPage = (
   root: ParentNode,
   referenceYear = new Date().getUTCFullYear(),
+  section: TikrSection = "incomeStatement",
 ): TikrPageData => {
   return {
     ticker: extractTicker(root),
     currentPrice: extractPrice(root),
     unit: extractUnit(root),
-    table: extractTable(root, referenceYear),
+    table: extractTable(root, referenceYear, sectionToMode(section)),
   }
 }

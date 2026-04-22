@@ -5,6 +5,7 @@ import { createDb } from "@/db"
 import {
   tickerState,
   valuations,
+  yearlyEstimates,
   yearlyFinancials,
 } from "@/modules/company/schema"
 
@@ -126,7 +127,7 @@ describe("ticker_state", () => {
 })
 
 describe("valuations", () => {
-  it("persiste y recupera el campo result como JSON tipado", () => {
+  it("persiste y recupera el campo result como JSON tipado y source por defecto", () => {
     const db = setup()
 
     const result = {
@@ -154,5 +155,47 @@ describe("valuations", () => {
     expect(fetched?.fiscalYearEnd).toBe("2025-09-27")
     expect(fetched?.createdAt).toBe("2026-04-19T12:00:00.000Z")
     expect(fetched?.result).toEqual(result)
+    expect(fetched?.source).toBe("auto")
+  })
+})
+
+describe("yearly_estimates", () => {
+  it("permite insertar y leer una fila de yearly_estimates", () => {
+    const db = setup()
+
+    const row = {
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "tikr",
+      capturedAt: "2026-04-22T10:00:00.000Z",
+      salesGrowth: 0.45,
+      ebitMargin: 0.62,
+      taxRate: 0.18,
+      capexMaintenanceSalesRatio: 0.04,
+      netDebtEbitdaRatio: -0.5,
+    }
+    db.insert(yearlyEstimates).values(row).run()
+
+    const [fetched] = db.select().from(yearlyEstimates).all()
+    expect(fetched).toMatchObject(row)
+  })
+
+  it("rechaza segundo insert con misma clave (ticker, fiscalYearEnd, source)", () => {
+    const db = setup()
+
+    const pk = {
+      ticker: "NVDA",
+      fiscalYearEnd: "2027-01-31",
+      source: "tikr",
+      capturedAt: "2026-04-22T10:00:00.000Z",
+    }
+    db.insert(yearlyEstimates).values(pk).run()
+
+    expect(() =>
+      db
+        .insert(yearlyEstimates)
+        .values({ ...pk, salesGrowth: 0.5 })
+        .run(),
+    ).toThrow()
   })
 })

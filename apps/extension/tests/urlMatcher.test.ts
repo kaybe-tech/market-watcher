@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, it, test } from "bun:test"
 import { matchTikrUrl } from "../src/sources/tikr/urlMatcher"
 
 describe("matchTikrUrl", () => {
@@ -23,5 +23,13 @@ describe("matchTikrUrl", () => {
     "about:blank",
   ])("returns null for %p", (url) => {
     expect(matchTikrUrl(url)).toBeNull()
+  })
+
+  it("mapea tab=est a 'estimates'", () => {
+    expect(
+      matchTikrUrl(
+        "https://app.tikr.com/stock/estimates?cid=1&tid=2&ref=x&tab=est",
+      ),
+    ).toBe("estimates")
   })
 })

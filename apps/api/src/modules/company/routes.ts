@@ -3,7 +3,12 @@ import type { BunSQLiteDatabase } from "drizzle-orm/bun-sqlite"
 import { Hono } from "hono"
 import { Company } from "./company"
 import { CompanyRepository } from "./repository"
-import { ingestBodySchema, tickerParamSchema } from "./validators"
+import {
+  estimatesBodySchema,
+  ingestBodySchema,
+  sourceQuerySchema,
+  tickerParamSchema,
+} from "./validators"
 
 export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
   const routes = new Hono()
@@ -23,6 +28,38 @@ export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
         })
       }
       return c.json({ success: true })
+    },
+  )
+
+  routes.post(
+    "/companies/:ticker/estimates",
+    sValidator("param", tickerParamSchema),
+    sValidator("json", estimatesBodySchema),
+    (c) => {
+      const { ticker } = c.req.valid("param")
+      const body = c.req.valid("json")
+      const result = company.ingestEstimates(ticker, body)
+      if (result.pendingValuation) {
+        void company.valuate(ticker).catch((err) => {
+          console.error(`background valuation failed for ${ticker}:`, err)
+        })
+      }
+      return c.json({ success: true })
+    },
+  )
+
+  routes.get(
+    "/companies/:ticker/valuations",
+    sValidator("param", tickerParamSchema),
+    sValidator("query", sourceQuerySchema),
+    (c) => {
+      const { ticker } = c.req.valid("param")
+      const { source } = c.req.valid("query")
+      const valuation = company.runOnTheFlyValuationBySource(ticker, source)
+      if (valuation === null) {
+        return c.json({ error: "no_data_for_source", ticker, source }, 404)
+      }
+      return c.json(valuation)
     },
   )
 

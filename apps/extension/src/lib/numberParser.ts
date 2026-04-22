@@ -51,3 +51,17 @@ export const parseAndNormalize = (raw: string, unit: Unit): number | null => {
   if (parsed === null) return null
   return normalizeToMillions(parsed, unit)
 }
+
+export const parsePercentCell = (raw: string): number | null => {
+  const trimmed = raw.replace(/\u00a0/g, " ").trim()
+  if (EMPTY_CELL_VALUES.has(trimmed)) return null
+  const negative = trimmed.startsWith("(") && trimmed.endsWith(")")
+  const inner = negative ? trimmed.slice(1, -1) : trimmed
+  if (!inner.endsWith("%")) return null
+  const withoutPercent = inner.slice(0, -1)
+  const cleaned = withoutPercent.replace(/,/g, "").replace(/\s/g, "")
+  if (cleaned === "") return null
+  const parsed = Number(cleaned)
+  if (!Number.isFinite(parsed)) return null
+  return (negative ? -parsed : parsed) / 100
+}

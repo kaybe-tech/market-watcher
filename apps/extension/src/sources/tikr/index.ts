@@ -1,5 +1,7 @@
 export type { TikrPageData } from "./domParser"
 export { parseTikrPage } from "./domParser"
+export type { EstimateYearPayload } from "./estimatesFieldMapper"
+export { mapTikrEstimatesToPayload } from "./estimatesFieldMapper"
 export type { ParsedTable, TableRow } from "./fieldMapper"
 export { mapTikrToPayload } from "./fieldMapper"
 export type { TikrSection } from "./urlMatcher"

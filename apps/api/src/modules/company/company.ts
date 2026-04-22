@@ -2,10 +2,12 @@ import {
   CompanyValuation,
   type CompanyYearFinancials,
 } from "@market-watcher/valuation-engine"
+import { mergeOverrides } from "./estimates"
 import type { CompanyRepository } from "./repository"
 import type {
   TickerStateRow,
   ValuationRow,
+  YearlyEstimatesRow,
   YearlyFinancialsRow,
 } from "./schema"
 
@@ -57,6 +59,20 @@ export type IngestPayload = {
   years: IncomingYearlyFinancials[]
 }
 
+export type IncomingEstimateYear = {
+  fiscalYearEnd: string
+  salesGrowth?: number
+  ebitMargin?: number
+  taxRate?: number
+  capexMaintenanceSalesRatio?: number
+  netDebtEbitdaRatio?: number
+}
+
+export type IngestEstimatesPayload = {
+  source: string
+  years?: IncomingEstimateYear[]
+}
+
 const EMPTY_YEARLY_FINANCIALS = Object.fromEntries(
   Object.values(INPUT_FIELDS)
     .flat()
@@ -91,6 +107,8 @@ export type CompanyView = {
   latestFiscalYearEnd: string | null
   currentPrice: number | null
   valuation: ValuationRow | null
+  valuationWithEstimates: ValuationRow | null
+  availableEstimateSources: string[]
   pending: boolean
   valuationInProgress: boolean
   missing?: MissingSummary
@@ -135,8 +153,90 @@ export class Company {
     })
   }
 
+  ingestEstimates(
+    ticker: string,
+    payload: IngestEstimatesPayload,
+  ): IngestResult {
+    return this.repository.runInTransaction(() => {
+      const previousState = this.repository.getTickerState(ticker)
+      const capturedAt = new Date().toISOString()
+
+      const years = payload.years ?? []
+      let hasWrites = false
+      for (const year of years) {
+        this.repository.upsertEstimate({
+          ticker,
+          fiscalYearEnd: year.fiscalYearEnd,
+          source: payload.source,
+          capturedAt,
+          salesGrowth: year.salesGrowth ?? null,
+          ebitMargin: year.ebitMargin ?? null,
+          taxRate: year.taxRate ?? null,
+          capexMaintenanceSalesRatio: year.capexMaintenanceSalesRatio ?? null,
+          netDebtEbitdaRatio: year.netDebtEbitdaRatio ?? null,
+        })
+        hasWrites = true
+      }
+
+      if (!hasWrites) {
+        return { pendingValuation: previousState?.pendingValuation ?? false }
+      }
+
+      if (previousState === null) {
+        this.repository.insertTickerState({
+          ticker,
+          latestFiscalYearEnd: null,
+          pendingValuation: true,
+          currentPrice: null,
+        })
+      } else if (!previousState.pendingValuation) {
+        this.repository.updateTickerState(ticker, { pendingValuation: true })
+      }
+
+      return { pendingValuation: true }
+    })
+  }
+
   hasValuationInProgress(ticker: string): boolean {
     return this.inProgressTickers.has(ticker)
+  }
+
+  runOnTheFlyValuationBySource(
+    ticker: string,
+    source: string,
+  ): CompanyValuation | null {
+    const state = this.repository.getTickerState(ticker)
+    if (!state || state.latestFiscalYearEnd === null) return null
+    if (state.currentPrice === null) return null
+
+    const estimateRows = this.repository
+      .listEstimatesForTicker(ticker)
+      .filter((row) => row.source === source)
+    if (estimateRows.length === 0) return null
+
+    const rows = this.repository.listYearlyFinancialsForTicker(ticker)
+    const series = this.consolidateConsecutiveYears(
+      rows,
+      state.latestFiscalYearEnd,
+    )
+    if (series.length < MIN_CONSECUTIVE_YEARS_FOR_VALUATION) return null
+
+    const financials = this.buildEngineFinancials(series)
+    const overrides = mergeOverrides(estimateRows)
+    try {
+      return new CompanyValuation({
+        ticker,
+        currentPrice: state.currentPrice,
+        financials,
+        overrides,
+      })
+    } catch (err) {
+      console.error(
+        `on-the-fly valuation for ${ticker} source=${source} failed:`,
+        err,
+      )
+      return null
+    }
   }
 
   async getCompanyView(ticker: string): Promise<CompanyView | null> {
@@ -153,7 +253,12 @@ export class Company {
       ticker,
       latestFiscalYearEnd: state.latestFiscalYearEnd,
       currentPrice: state.currentPrice,
-      valuation: this.repository.getLatestValuation(ticker),
+      valuation: this.repository.getLatestValuationBySource(ticker, "auto"),
+      valuationWithEstimates: this.repository.getLatestValuationBySource(
+        ticker,
+        "merged_estimates",
+      ),
+      availableEstimateSources: this.repository.listSourcesForTicker(ticker),
       pending: state.pendingValuation,
       valuationInProgress: this.hasValuationInProgress(ticker),
     }
@@ -190,26 +295,87 @@ export class Company {
     if (series.length < MIN_CONSECUTIVE_YEARS_FOR_VALUATION) return
 
     const financials = this.buildEngineFinancials(series)
+    const createdAt = new Date().toISOString()
+    const autoOk = this.runAutoValuation(
+      ticker,
+      state.currentPrice,
+      state.latestFiscalYearEnd,
+      financials,
+      createdAt,
+    )
+    if (!autoOk) return
 
-    let valuation: CompanyValuation
-    try {
-      valuation = new CompanyValuation({
+    const estimateRows = this.repository.listEstimatesForTicker(ticker)
+    if (estimateRows.length > 0) {
+      this.runMergedEstimatesValuation(
         ticker,
-        currentPrice: state.currentPrice,
+        state.currentPrice,
+        state.latestFiscalYearEnd,
         financials,
-      })
-    } catch (err) {
-      console.error(`valuation engine failed for ${ticker}:`, err)
-      return
+        estimateRows,
+        createdAt,
+      )
     }
 
-    this.repository.insertValuation({
-      ticker,
-      fiscalYearEnd: state.latestFiscalYearEnd,
-      result: valuation,
-      createdAt: new Date().toISOString(),
-    })
     this.repository.updateTickerState(ticker, { pendingValuation: false })
+  }
+
+  private runAutoValuation(
+    ticker: string,
+    currentPrice: number,
+    fiscalYearEnd: string,
+    financials: Record<number, CompanyYearFinancials>,
+    createdAt: string,
+  ): boolean {
+    try {
+      const valuation = new CompanyValuation({
+        ticker,
+        currentPrice,
+        financials,
+      })
+      this.repository.insertValuation({
+        ticker,
+        fiscalYearEnd,
+        result: valuation,
+        createdAt,
+        source: "auto",
+      })
+      return true
+    } catch (err) {
+      console.error(`valuation engine (auto) failed for ${ticker}:`, err)
+      return false
+    }
+  }
+
+  private runMergedEstimatesValuation(
+    ticker: string,
+    currentPrice: number,
+    fiscalYearEnd: string,
+    financials: Record<number, CompanyYearFinancials>,
+    estimateRows: YearlyEstimatesRow[],
+    createdAt: string,
+  ): void {
+    const overrides = mergeOverrides(estimateRows)
+    try {
+      const valuation = new CompanyValuation({
+        ticker,
+        currentPrice,
+        financials,
+        overrides,
+      })
+      this.repository.insertValuation({
+        ticker,
+        fiscalYearEnd,
+        result: valuation,
+        createdAt,
+        source: "merged_estimates",
+      })
+    } catch (err) {
+      console.error(
+        `valuation engine (merged_estimates) failed for ${ticker}:`,
+        err,
+      )
+    }
   }
 
   private buildEngineFinancials(

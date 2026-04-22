@@ -128,7 +128,7 @@ const CASH_FLOW_FIELDS: FieldDefinition[] = [
   },
 ]
 
-const FIELDS_BY_SECTION: Record<TikrSection, FieldDefinition[]> = {
+const FIELDS_BY_SECTION: Record<Exclude<TikrSection, "estimates">, FieldDefinition[]> = {
   incomeStatement: INCOME_STATEMENT_FIELDS,
   balanceSheet: BALANCE_SHEET_FIELDS,
   cashFlowStatement: CASH_FLOW_FIELDS,
@@ -204,7 +204,7 @@ const resolveSumValue = (
 }
 
 export const mapTikrToPayload = (
-  section: TikrSection,
+  section: Exclude<TikrSection, "estimates">,
   table: ParsedTable,
   unit: Unit,
 ): IngestYear[] => {

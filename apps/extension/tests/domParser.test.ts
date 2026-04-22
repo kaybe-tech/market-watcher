@@ -1,4 +1,4 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, it, test } from "bun:test"
 import { Window } from "happy-dom"
 import { parseTikrPage } from "../src/sources/tikr/domParser"
 
@@ -14,6 +14,14 @@ const loadFixture = async (name: string) => {
     window.document.body as unknown as ParentNode,
     REFERENCE_YEAR,
   )
+}
+
+const loadFixtureRoot = async (name: string): Promise<ParentNode> => {
+  const file = Bun.file(new URL(`${name}.html`, FIXTURE_DIR))
+  const html = await file.text()
+  const window = new Window()
+  window.document.body.innerHTML = html
+  return window.document.body as unknown as ParentNode
 }
 
 const EXPECTED_PRICE: Record<string, number> = {
@@ -98,5 +106,17 @@ describe("parseTikrPage", () => {
     for (let i = 1; i < years.length; i += 1) {
       expect(years[i] > years[i - 1]).toBe(true)
     }
+  })
+})
+
+describe("parseTikrPage sobre fixture nvda-estimates", () => {
+  it("extrae ticker, price, unit y 4 años estimados", async () => {
+    const root = await loadFixtureRoot("nvda-estimates")
+    const data = parseTikrPage(root, 2026, "estimates")
+    expect(data.ticker).toBe("NVDA")
+    expect(data.unit).toBe("millions")
+    expect(data.currentPrice).not.toBeNull()
+    expect(data.table.fiscalYears).toHaveLength(4)
+    expect(data.table.fiscalYears[0]).toMatch(/^\d{4}-01-31$/)
   })
 })

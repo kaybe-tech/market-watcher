@@ -151,6 +151,45 @@ describe("Company.valuate — datos insuficientes", () => {
   })
 })
 
+describe("Company.valuate con estimates", () => {
+  const setupWithCompleteFinancials = (ticker: string) => {
+    const { company, repository } = setup()
+    company.ingestData(ticker, toIngestBody(amznFixture))
+    return { company, repository }
+  }
+
+  it("genera dos valuations (auto y merged_estimates) cuando hay estimates", async () => {
+    const { company, repository } = setupWithCompleteFinancials("AMZN")
+    company.ingestEstimates("AMZN", {
+      source: "tikr",
+      years: [
+        { fiscalYearEnd: "2026-12-31", salesGrowth: 0.15, ebitMargin: 0.1 },
+      ],
+    })
+    await company.valuate("AMZN")
+    const all = repository.listValuationsForTicker("AMZN")
+    const sources = new Set(all.map((v) => v.source))
+    expect(sources).toEqual(new Set(["auto", "merged_estimates"]))
+  })
+
+  it("solo genera auto si no hay estimates", async () => {
+    const { company, repository } = setupWithCompleteFinancials("AMZN")
+    await company.valuate("AMZN")
+    const all = repository.listValuationsForTicker("AMZN")
+    expect(all.map((v) => v.source)).toEqual(["auto"])
+  })
+
+  it("pendingValuation=false después de correr (auto exitoso)", async () => {
+    const { company, repository } = setupWithCompleteFinancials("AMZN")
+    company.ingestEstimates("AMZN", {
+      source: "tikr",
+      years: [{ fiscalYearEnd: "2026-12-31", salesGrowth: 0.3 }],
+    })
+    await company.valuate("AMZN")
+    expect(repository.getTickerState("AMZN")?.pendingValuation).toBe(false)
+  })
+})
+
 describe("Company.valuate — fallo del engine", () => {
   it("engine que lanza → no persiste valoración; pending queda true; error registrado", async () => {
     const { company, repository } = setup()

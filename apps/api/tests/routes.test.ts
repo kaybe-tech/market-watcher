@@ -3,6 +3,7 @@ import type { CompanyValuation } from "@market-watcher/valuation-engine"
 import { migrate } from "drizzle-orm/bun-sqlite/migrator"
 import { createApp } from "@/app"
 import { createDb } from "@/db"
+import { Company } from "@/modules/company/company"
 import { CompanyRepository } from "@/modules/company/repository"
 import { completeYearRow, fullYearPayload } from "./fixtures/company"
 import { amznFixture, toIngestBody } from "./fixtures/engine"
@@ -516,18 +517,21 @@ describe("GET /companies/:ticker", () => {
       fiscalYearEnd: "2024-12-31",
       result: { tag: "first" } as unknown as CompanyValuation,
       createdAt: "2026-04-18T09:00:00.000Z",
+      source: "auto",
     })
     const second = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
       result: { tag: "second" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
+      source: "auto",
     })
     const third = repository.insertValuation({
       ticker: "AAPL",
       fiscalYearEnd: "2024-12-31",
       result: { tag: "third" } as unknown as CompanyValuation,
       createdAt: sameCreatedAt,
+      source: "auto",
     })
 
     const res = await getCompany(app, "AAPL")
@@ -537,6 +541,127 @@ describe("GET /companies/:ticker", () => {
     expect(body.valuation?.id).toBe(third.id)
     expect(body.valuation?.id).toBeGreaterThan(second.id)
     expect(body.valuation?.result).toEqual({ tag: "third" })
+  })
+})
+
+describe("POST /companies/:ticker/estimates", () => {
+  it("acepta payload válido y persiste", async () => {
+    const { app, repository } = setup()
+    const res = await app.request("/companies/NVDA/estimates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: "tikr",
+        years: [
+          { fiscalYearEnd: "2027-01-31", salesGrowth: 0.45, ebitMargin: 0.62 },
+        ],
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ success: true })
+    const rows = repository.listEstimatesForTicker("NVDA")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.salesGrowth).toBe(0.45)
+  })
+
+  it("rechaza source vacío con 400", async () => {
+    const { app } = setup()
+    const res = await app.request("/companies/NVDA/estimates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ source: "", years: [] }),
+    })
+    expect(res.status).toBe(400)
+  })
+
+  it("normaliza ticker a mayúsculas", async () => {
+    const { app, repository } = setup()
+    const res = await app.request("/companies/nvda/estimates", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        source: "tikr",
+        years: [{ fiscalYearEnd: "2027-01-31", salesGrowth: 0.45 }],
+      }),
+    })
+    expect(res.status).toBe(200)
+    expect(repository.listEstimatesForTicker("NVDA")).toHaveLength(1)
+  })
+})
+
+const setupWithCompleteFinancialsViaRoute = (ticker: string) => {
+  const db = createDb(":memory:")
+  migrate(db, { migrationsFolder })
+  const app = createApp(db)
+  const repository = new CompanyRepository(db)
+  const company = new Company(repository)
+
+  // Seed complete financials via POST so the app's internal state is consistent
+  void app.request(`/companies/${ticker}/data`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(toIngestBody(amznFixture)),
+  })
+
+  return { app, company, repository }
+}
+
+describe("GET /companies/:ticker con estimates", () => {
+  it("response incluye valuationWithEstimates cuando hay estimates", async () => {
+    const { app, company, repository } = setupWithCompleteFinancialsViaRoute("AMZN")
+    await waitForBackgroundValuation(repository, "AMZN")
+
+    company.ingestEstimates("AMZN", {
+      source: "tikr",
+      years: [{ fiscalYearEnd: "2026-12-31", salesGrowth: 0.15, ebitMargin: 0.10 }],
+    })
+    await company.valuate("AMZN")
+
+    const res = await app.request("/companies/AMZN")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.valuation).not.toBeNull()
+    expect(body.valuationWithEstimates).not.toBeNull()
+    expect(body.availableEstimateSources).toEqual(["tikr"])
+  })
+
+  it("valuationWithEstimates es null cuando no hay estimates", async () => {
+    const { app, repository } = setupWithCompleteFinancialsViaRoute("AMZN")
+    await waitForBackgroundValuation(repository, "AMZN")
+
+    const res = await app.request("/companies/AMZN")
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.valuationWithEstimates).toBeNull()
+    expect(body.availableEstimateSources).toEqual([])
+  })
+})
+
+describe("GET /companies/:ticker/valuations?source=<source>", () => {
+  it("devuelve valoración on-the-fly para una source con datos", async () => {
+    const { app, company } = setupWithCompleteFinancialsViaRoute("AMZN")
+    company.ingestEstimates("AMZN", {
+      source: "tikr",
+      years: [
+        { fiscalYearEnd: "2026-12-31", salesGrowth: 0.45, ebitMargin: 0.62 },
+      ],
+    })
+    await company.valuate("AMZN")
+    const res = await app.request("/companies/AMZN/valuations?source=tikr")
+    expect(res.status).toBe(200)
+    const body = (await res.json()) as Record<string, unknown>
+    expect(body.intrinsicValue).toBeDefined()
+  })
+
+  it("404 si la source no tiene datos para el ticker", async () => {
+    const { app } = setupWithCompleteFinancialsViaRoute("AMZN")
+    const res = await app.request("/companies/AMZN/valuations?source=tikr")
+    expect(res.status).toBe(404)
+  })
+
+  it("400 si source no está presente", async () => {
+    const { app } = setupWithCompleteFinancialsViaRoute("AMZN")
+    const res = await app.request("/companies/AMZN/valuations")
+    expect(res.status).toBe(400)
   })
 })
 

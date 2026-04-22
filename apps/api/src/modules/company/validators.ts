@@ -86,3 +86,31 @@ export type IngestBodyInput = v.InferInput<typeof ingestBodySchema>
 export type IngestBodyOutput = v.InferOutput<typeof ingestBodySchema>
 export type TickerParamInput = v.InferInput<typeof tickerParamSchema>
 export type TickerParamOutput = v.InferOutput<typeof tickerParamSchema>
+
+const estimateYearSchema = v.strictObject({
+  fiscalYearEnd: fiscalYearEndSchema,
+  salesGrowth: optionalNumber,
+  ebitMargin: optionalNumber,
+  taxRate: optionalNumber,
+  capexMaintenanceSalesRatio: optionalNumber,
+  netDebtEbitdaRatio: optionalNumber,
+})
+
+export const estimatesBodySchema = v.pipe(
+  v.strictObject({
+    source: v.pipe(v.string(), v.minLength(1, "source must not be empty")),
+    years: v.optional(v.array(estimateYearSchema)),
+  }),
+  v.check((input) => {
+    const years = input.years ?? []
+    const ends = years.map((year) => year.fiscalYearEnd)
+    return new Set(ends).size === ends.length
+  }, "years must contain unique fiscalYearEnd values"),
+)
+
+export type EstimatesBodyInput = v.InferInput<typeof estimatesBodySchema>
+export type EstimatesBodyOutput = v.InferOutput<typeof estimatesBodySchema>
+
+export const sourceQuerySchema = v.object({
+  source: v.pipe(v.string(), v.minLength(1, "source must not be empty")),
+})

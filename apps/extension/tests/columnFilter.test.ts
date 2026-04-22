@@ -1,20 +1,30 @@
-import { describe, expect, test } from "bun:test"
+import { describe, expect, it } from "bun:test"
 import { filterFiscalYearColumns } from "../src/lib/columnFilter"
 
 describe("filterFiscalYearColumns", () => {
-  test("keeps fiscal-year headers and returns parsed ISO dates", () => {
-    const result = filterFiscalYearColumns(
-      ["1/29/17", "1/25/26", "1/25/27E", "LTM"],
+  it("mode='historical' excluye sufijo E y conserva sin-sufijo", () => {
+    const cols = filterFiscalYearColumns(
+      ["1/29/23", "1/28/24", "1/25/27E", "LTM"],
       2026,
+      "historical",
     )
-    expect(result).toEqual([
-      { index: 0, fiscalYearEnd: "2017-01-29" },
-      { index: 1, fiscalYearEnd: "2026-01-25" },
-    ])
+    expect(cols.map((c) => c.fiscalYearEnd)).toEqual(["2023-01-29", "2024-01-28"])
   })
 
-  test("excludes estimates and LTM", () => {
-    const result = filterFiscalYearColumns(["1/25/27E", "LTM", "1/25/26"], 2026)
-    expect(result).toEqual([{ index: 2, fiscalYearEnd: "2026-01-25" }])
+  it("mode='estimates' conserva solo sufijo E (con espacio o sin espacio)", () => {
+    const cols = filterFiscalYearColumns(
+      ["1/31/23 A", "1/31/26 A", "1/31/27 E", "1/31/28 E", "CAGR"],
+      2026,
+      "estimates",
+    )
+    expect(cols.map((c) => c.fiscalYearEnd)).toEqual(["2027-01-31", "2028-01-31"])
+  })
+
+  it("mode default ausente = 'historical' (backwards-compat)", () => {
+    const cols = filterFiscalYearColumns(
+      ["1/29/23", "1/25/27E"],
+      2026,
+    )
+    expect(cols.map((c) => c.fiscalYearEnd)).toEqual(["2023-01-29"])
   })
 })

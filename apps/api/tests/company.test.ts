@@ -371,6 +371,63 @@ describe("Company - missingTickerFields", () => {
   })
 })
 
+describe("Company.ingestEstimates", () => {
+  it("crea TickerState si no existe y marca pendingValuation=true", () => {
+    const { company, repository } = setup()
+    const result = company.ingestEstimates("NVDA", {
+      source: "tikr",
+      years: [
+        {
+          fiscalYearEnd: "2027-01-31",
+          salesGrowth: 0.45,
+          ebitMargin: 0.62,
+        },
+      ],
+    })
+    expect(result.pendingValuation).toBe(true)
+    expect(repository.getTickerState("NVDA")).toMatchObject({
+      ticker: "NVDA",
+      pendingValuation: true,
+    })
+    const rows = repository.listEstimatesForTicker("NVDA")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.salesGrowth).toBe(0.45)
+  })
+
+  it("upsert reemplaza la fila existente", () => {
+    const { company, repository } = setup()
+    company.ingestEstimates("NVDA", {
+      source: "tikr",
+      years: [
+        { fiscalYearEnd: "2027-01-31", salesGrowth: 0.45, ebitMargin: 0.62 },
+      ],
+    })
+    company.ingestEstimates("NVDA", {
+      source: "tikr",
+      years: [
+        { fiscalYearEnd: "2027-01-31", salesGrowth: 0.50 },
+      ],
+    })
+    const rows = repository.listEstimatesForTicker("NVDA")
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.salesGrowth).toBe(0.50)
+    expect(rows[0]?.ebitMargin).toBeNull()
+  })
+
+  it("payload sin years acepta pero no toca pendingValuation", () => {
+    const { company, repository } = setup()
+    repository.insertTickerState({
+      ticker: "NVDA",
+      latestFiscalYearEnd: null,
+      pendingValuation: false,
+      currentPrice: null,
+    })
+    const result = company.ingestEstimates("NVDA", { source: "tikr" })
+    expect(result.pendingValuation).toBe(false)
+    expect(repository.getTickerState("NVDA")?.pendingValuation).toBe(false)
+  })
+})
+
 describe("Company - consolidateMissing", () => {
   it("precio presente y todos los años completos → resumen vacío", () => {
     const { company } = setup()

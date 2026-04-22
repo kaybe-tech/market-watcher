@@ -15,6 +15,13 @@
       "when": 1776644493516,
       "tag": "0001_nervous_raza",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "6",
+      "when": 1776882049669,
+      "tag": "0002_short_marvex",
+      "breakpoints": true
     }
   ]
 }
