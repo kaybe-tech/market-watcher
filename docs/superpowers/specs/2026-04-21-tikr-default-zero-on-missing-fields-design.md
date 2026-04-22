@@ -82,3 +82,25 @@ Como NVDA es la única empresa cargada hoy, no hace falta limpiar nada más.
 
 - **Falso 0 enmascara bugs futuros del DOM de TIKR.** Si TIKR cambia su HTML y deja de exponer una fila crítica (`Total Revenues`, `Operating Income`, etc.), la extensión enviaría 0 silenciosamente y el engine produciría una valoración basura. Mitigación parcial: el caso (3) sí se mantiene como faltante, pero (1) y (2) no. Se acepta este riesgo porque es la opción explícitamente elegida (permisivo amplio).
 - **Distinción "no aplica" vs "no encontrado" se pierde.** En BD ya no se distingue entre "TIKR no exponía la fila" y "el valor real era 0". Aceptable para el caso de uso actual.
+
+## Refinamiento (post-implementación)
+
+Tras la primera implementación, NVDA seguía marcando años incompletos en el balance sheet. Investigación reveló que TIKR muestra la fila pero deja la celda **visualmente vacía** (texto `""`) cuando el valor es 0 — no oculta la fila. Y `text()` en `domParser.ts` siempre devuelve string (`""` cuando no hay nodo), por lo que el caso (2) del fieldMapper nunca se dispara desde el DOM real: las celdas vacías llegan a `parseCell` como `""` y caen en `EMPTY_CELL_VALUES`, retornando `null` → caso (3) → omitido.
+
+El caso (3) original mezclaba dos cosas semánticamente distintas:
+- **Vacío visual** (`""`, `"—"`, `"--"`, `"-"`, `"–"`): TIKR usa esto para representar 0.
+- **No medible** (`"NM"`, `"N/A"`, `"NA"`): TIKR usa esto para indicar valor no aplicable o no medible.
+
+**Cambio adicional:**
+
+En `apps/extension/src/lib/numberParser.ts`:
+- Separar `EMPTY_CELL_VALUES` en dos sets exportables: `VISUAL_EMPTY_VALUES` y `UNMEASURABLE_VALUES`.
+- Exportar helper `isVisualEmpty(raw: string): boolean` que aplica el mismo trim/normalize que `parseCell`.
+- `parseCell` mantiene su contrato (retorna `null` para ambos sets), así no afecta `extractPrice` ni otros consumidores.
+
+En `apps/extension/src/sources/tikr/fieldMapper.ts`:
+- Cuando `parseAndNormalize` devuelve `null`, evaluar `isVisualEmpty(raw)`:
+  - Si es vacío visual → `applyValue(..., 0)`.
+  - Si no (incluye `UNMEASURABLE_VALUES` y formatos nuevos no soportados) → seguir omitiendo (caso 3 estricto).
+
+Esto resuelve el caso real de NVDA y mantiene la protección contra parsers rotos: si TIKR introduce un formato nuevo no soportado (ej: `"#REF!"`, fecha mal formateada), `parseAndNormalize` devolverá null y `isVisualEmpty` también dará false, así que el campo seguirá omitido para detectar el bug.
