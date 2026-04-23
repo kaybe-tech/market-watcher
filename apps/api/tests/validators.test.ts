@@ -1,8 +1,8 @@
 import { describe, expect, it } from "bun:test"
 import * as v from "valibot"
 import {
-  type IngestBodyInput,
   estimatesBodySchema,
+  type IngestBodyInput,
   ingestBodySchema,
   tickerParamSchema,
 } from "@/modules/company/validators"

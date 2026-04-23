@@ -114,10 +114,72 @@ export type CompanyView = {
   missing?: MissingSummary
 }
 
+export type CompanyListItemSummary = {
+  buyPrice: number | null
+  buyPriceDiff: number | null
+  targetPrice1y: number | null
+  mos1y: number | null
+  cagr3y: number | null
+  cagr5y: number | null
+}
+
+export type CompanyListItem = {
+  ticker: string
+  name: string | null
+  currentPrice: number | null
+  latestFiscalYearEnd: string | null
+  lastValuatedAt: string | null
+  pending: boolean
+  valuationInProgress: boolean
+  summary: CompanyListItemSummary
+}
+
 const MIN_CONSECUTIVE_YEARS_FOR_VALUATION = 2
 
 const fiscalYearOf = (fiscalYearEnd: string): number =>
   Number.parseInt(fiscalYearEnd.slice(0, 4), 10)
+
+const EMPTY_SUMMARY: CompanyListItemSummary = {
+  buyPrice: null,
+  buyPriceDiff: null,
+  targetPrice1y: null,
+  mos1y: null,
+  cagr3y: null,
+  cagr5y: null,
+}
+
+export const summarizeValuation = (
+  valuation: CompanyValuation | null,
+): CompanyListItemSummary => {
+  if (!valuation) return { ...EMPTY_SUMMARY }
+  const projectedYears = Object.keys(valuation.projected ?? {})
+    .map((y) => Number.parseInt(y, 10))
+    .filter((y) => Number.isFinite(y))
+    .sort((a, b) => a - b)
+  const firstProjectedYear = projectedYears[0]
+  const thirdProjectedYear = projectedYears[2]
+  const targetPriceFirst =
+    firstProjectedYear !== undefined
+      ? (valuation.intrinsicValue?.targetPrice?.[firstProjectedYear] ?? null)
+      : null
+  const targetPriceThird =
+    thirdProjectedYear !== undefined
+      ? (valuation.intrinsicValue?.targetPrice?.[thirdProjectedYear] ?? null)
+      : null
+  const cagr3y =
+    targetPriceThird?.evFcf != null && valuation.currentPrice > 0
+      ? (targetPriceThird.evFcf / valuation.currentPrice) ** (1 / 3) - 1
+      : null
+  return {
+    buyPrice: valuation.intrinsicValue?.buyPrice?.price ?? null,
+    buyPriceDiff:
+      valuation.intrinsicValue?.buyPrice?.differenceVsCurrent ?? null,
+    targetPrice1y: targetPriceFirst?.evFcf ?? null,
+    mos1y: targetPriceFirst?.marginOfSafety ?? null,
+    cagr3y,
+    cagr5y: valuation.intrinsicValue?.cagr5y?.evFcf ?? null,
+  }
+}
 
 export class Company {
   private readonly repository: CompanyRepository
@@ -199,6 +261,39 @@ export class Company {
 
   hasValuationInProgress(ticker: string): boolean {
     return this.inProgressTickers.has(ticker)
+  }
+
+  listCompanies(): CompanyListItem[] {
+    const states = this.repository.listTickerStates()
+    const items: CompanyListItem[] = states.map((state) => {
+      const valuationRow = this.repository.getLatestValuationBySource(
+        state.ticker,
+        "auto",
+      )
+      const valuation = valuationRow?.result ?? null
+      const summary = summarizeValuation(valuation)
+      return {
+        ticker: state.ticker,
+        name: valuation?.name ?? null,
+        currentPrice: state.currentPrice,
+        latestFiscalYearEnd: state.latestFiscalYearEnd,
+        lastValuatedAt: valuationRow?.createdAt ?? null,
+        pending: state.pendingValuation,
+        valuationInProgress: this.hasValuationInProgress(state.ticker),
+        summary,
+      }
+    })
+
+    items.sort((a, b) => {
+      const av = a.summary.mos1y
+      const bv = b.summary.mos1y
+      if (av === null && bv === null) return a.ticker.localeCompare(b.ticker)
+      if (av === null) return 1
+      if (bv === null) return -1
+      return bv - av
+    })
+
+    return items
   }
 
   runOnTheFlyValuationBySource(

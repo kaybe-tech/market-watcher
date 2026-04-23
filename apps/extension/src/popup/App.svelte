@@ -1,6 +1,10 @@
 <script lang="ts">
 import { onMount } from "svelte"
-import type { EstimatesPayload, IngestPayload, IngestYear } from "../lib/apiClient"
+import type {
+  EstimatesPayload,
+  IngestPayload,
+  IngestYear,
+} from "../lib/apiClient"
 import { sendEstimates, sendIngest } from "../lib/apiClient"
 import type { TikrPageData } from "../sources/tikr/domParser"
 import { parseTikrPage } from "../sources/tikr/domParser"
@@ -47,7 +51,10 @@ const extractHtml = (): string => document.documentElement.outerHTML
 const loadPage = async (): Promise<void> => {
   const [tab] = await browser.tabs.query({ active: true, currentWindow: true })
   if (!tab?.url || !tab.id) {
-    status = { kind: "unsupported", message: "No se pudo leer la pestaña activa." }
+    status = {
+      kind: "unsupported",
+      message: "No se pudo leer la pestaña activa.",
+    }
     return
   }
   const section = matchTikrUrl(tab.url)
@@ -69,7 +76,8 @@ const loadPage = async (): Promise<void> => {
   } catch (err) {
     status = {
       kind: "unsupported",
-      message: err instanceof Error ? err.message : "No se pudo leer el contenido.",
+      message:
+        err instanceof Error ? err.message : "No se pudo leer el contenido.",
     }
     return
   }
@@ -107,7 +115,9 @@ const send = async (preview: Preview): Promise<void> => {
   status = { kind: "sending", preview }
   const ticker = preview.data.ticker ?? ""
   const apiUrl = await getApiUrl()
-  let result: { ok: true } | { ok: false; status: number | null; message: string }
+  let result:
+    | { ok: true }
+    | { ok: false; status: number | null; message: string }
   if (preview.kind === "estimates") {
     const payload: EstimatesPayload = { source: "tikr", years: preview.years }
     result = await sendEstimates(apiUrl, ticker, payload)

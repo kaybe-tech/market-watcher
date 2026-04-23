@@ -6,8 +6,8 @@ import {
   type ValuationRow,
   valuations,
   type YearlyEstimatesRow,
-  yearlyEstimates,
   type YearlyFinancialsRow,
+  yearlyEstimates,
   yearlyFinancials,
 } from "./schema"
 
@@ -30,6 +30,10 @@ export class CompanyRepository {
       .limit(1)
       .all()
     return row ?? null
+  }
+
+  listTickerStates(): TickerStateRow[] {
+    return this.db.select().from(tickerState).all()
   }
 
   insertTickerState(row: TickerStateRow): void {

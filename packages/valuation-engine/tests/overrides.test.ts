@@ -45,7 +45,9 @@ describe("overrides — bit-idéntico sin overrides", () => {
   }
 
   test("multiples y intrinsicValue idénticos", () => {
-    expect(explicit.multiples.target).toEqual(baseline.multiples.target as never)
+    expect(explicit.multiples.target).toEqual(
+      baseline.multiples.target as never,
+    )
     expect(explicit.intrinsicValue.cagr5y).toEqual(
       baseline.intrinsicValue.cagr5y as never,
     )
@@ -81,8 +83,10 @@ describe("overrides — salesGrowth en un año, cascada a años posteriores", ()
   })
 
   test("sales del 2028 = sales 2027 × 1.30", () => {
-    const sales2027 = overridden.projected[2027]?.incomeStatement.sales as number
-    const sales2028 = overridden.projected[2028]?.incomeStatement.sales as number
+    const sales2027 = overridden.projected[2027]?.incomeStatement
+      .sales as number
+    const sales2028 = overridden.projected[2028]?.incomeStatement
+      .sales as number
     expect(sales2028).toBeCloseTo(sales2027 * 1.3, 6)
   })
 
@@ -124,13 +128,14 @@ describe("overrides — changeInWorkingCapital absoluto en un año", () => {
   const baseline = buildBaseline()
 
   test("2028 usa exactamente el valor absoluto del override", () => {
-    expect(overridden.projected[2028]?.freeCashFlow.changeInWorkingCapital).toBe(
-      ABS,
-    )
+    expect(
+      overridden.projected[2028]?.freeCashFlow.changeInWorkingCapital,
+    ).toBe(ABS)
   })
 
   test("2029+ propaga el ratio implícito ABS/sales_2028", () => {
-    const sales2028 = overridden.projected[2028]?.incomeStatement.sales as number
+    const sales2028 = overridden.projected[2028]?.incomeStatement
+      .sales as number
     for (const y of [2029, 2030, 2031]) {
       const salesY = overridden.projected[y]?.incomeStatement.sales as number
       const expected = (ABS / sales2028) * salesY
@@ -141,7 +146,9 @@ describe("overrides — changeInWorkingCapital absoluto en un año", () => {
   })
 
   test("2027 no se altera (cwc previo al override)", () => {
-    expect(overridden.projected[2027]?.freeCashFlow.changeInWorkingCapital).toBe(
+    expect(
+      overridden.projected[2027]?.freeCashFlow.changeInWorkingCapital,
+    ).toBe(
       baseline.projected[2027]?.freeCashFlow.changeInWorkingCapital as number,
     )
   })

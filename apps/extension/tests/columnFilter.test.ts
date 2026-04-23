@@ -8,7 +8,10 @@ describe("filterFiscalYearColumns", () => {
       2026,
       "historical",
     )
-    expect(cols.map((c) => c.fiscalYearEnd)).toEqual(["2023-01-29", "2024-01-28"])
+    expect(cols.map((c) => c.fiscalYearEnd)).toEqual([
+      "2023-01-29",
+      "2024-01-28",
+    ])
   })
 
   it("mode='estimates' conserva solo sufijo E (con espacio o sin espacio)", () => {
@@ -17,14 +20,14 @@ describe("filterFiscalYearColumns", () => {
       2026,
       "estimates",
     )
-    expect(cols.map((c) => c.fiscalYearEnd)).toEqual(["2027-01-31", "2028-01-31"])
+    expect(cols.map((c) => c.fiscalYearEnd)).toEqual([
+      "2027-01-31",
+      "2028-01-31",
+    ])
   })
 
   it("mode default ausente = 'historical' (backwards-compat)", () => {
-    const cols = filterFiscalYearColumns(
-      ["1/29/23", "1/25/27E"],
-      2026,
-    )
+    const cols = filterFiscalYearColumns(["1/29/23", "1/25/27E"], 2026)
     expect(cols.map((c) => c.fiscalYearEnd)).toEqual(["2023-01-29"])
   })
 })

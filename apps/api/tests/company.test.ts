@@ -404,13 +404,11 @@ describe("Company.ingestEstimates", () => {
     })
     company.ingestEstimates("NVDA", {
       source: "tikr",
-      years: [
-        { fiscalYearEnd: "2027-01-31", salesGrowth: 0.50 },
-      ],
+      years: [{ fiscalYearEnd: "2027-01-31", salesGrowth: 0.5 }],
     })
     const rows = repository.listEstimatesForTicker("NVDA")
     expect(rows).toHaveLength(1)
-    expect(rows[0]?.salesGrowth).toBe(0.50)
+    expect(rows[0]?.salesGrowth).toBe(0.5)
     expect(rows[0]?.ebitMargin).toBeNull()
   })
 

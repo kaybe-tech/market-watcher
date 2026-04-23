@@ -48,6 +48,10 @@ export const createCompanyRoutes = (db: BunSQLiteDatabase) => {
     },
   )
 
+  routes.get("/companies", (c) => {
+    return c.json(company.listCompanies())
+  })
+
   routes.get(
     "/companies/:ticker/valuations",
     sValidator("param", tickerParamSchema),

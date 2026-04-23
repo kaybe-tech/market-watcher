@@ -40,8 +40,16 @@ describe("E2E estimates", () => {
       body: JSON.stringify({
         source: "tikr",
         years: [
-          { fiscalYearEnd: ESTIMATE_YEAR_1, salesGrowth: 0.15, ebitMargin: 0.10 },
-          { fiscalYearEnd: ESTIMATE_YEAR_2, salesGrowth: 0.12, ebitMargin: 0.11 },
+          {
+            fiscalYearEnd: ESTIMATE_YEAR_1,
+            salesGrowth: 0.15,
+            ebitMargin: 0.1,
+          },
+          {
+            fiscalYearEnd: ESTIMATE_YEAR_2,
+            salesGrowth: 0.12,
+            ebitMargin: 0.11,
+          },
         ],
       }),
     })

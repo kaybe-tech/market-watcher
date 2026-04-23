@@ -242,7 +242,7 @@ describe("CompanyRepository - yearly_estimates", () => {
       fiscalYearEnd: "2027-01-31",
       source: "tikr",
       capturedAt: "2026-05-01T10:00:00.000Z",
-      salesGrowth: 0.50,
+      salesGrowth: 0.5,
       ebitMargin: null,
       taxRate: null,
       capexMaintenanceSalesRatio: 0.04,
@@ -251,7 +251,7 @@ describe("CompanyRepository - yearly_estimates", () => {
     const rows = repo.listEstimatesForTicker("NVDA")
     expect(rows).toHaveLength(1)
     expect(rows[0]).toMatchObject({
-      salesGrowth: 0.50,
+      salesGrowth: 0.5,
       ebitMargin: null,
       taxRate: null,
       capexMaintenanceSalesRatio: 0.04,
@@ -277,7 +277,7 @@ describe("CompanyRepository - yearly_estimates", () => {
       fiscalYearEnd: "2027-01-31",
       source: "manual",
       capturedAt: "2026-04-22T10:00:00.000Z",
-      salesGrowth: 0.50,
+      salesGrowth: 0.5,
       ebitMargin: null,
       taxRate: null,
       capexMaintenanceSalesRatio: null,
@@ -306,6 +306,8 @@ describe("CompanyRepository - valuations por source", () => {
       source: "merged_estimates",
     })
     expect(repo.getLatestValuationBySource("NVDA", "auto")?.source).toBe("auto")
-    expect(repo.getLatestValuationBySource("NVDA", "merged_estimates")?.source).toBe("merged_estimates")
+    expect(
+      repo.getLatestValuationBySource("NVDA", "merged_estimates")?.source,
+    ).toBe("merged_estimates")
   })
 })

@@ -12,8 +12,8 @@ describe("mapTikrEstimatesToPayload", () => {
       ],
     }
     expect(mapTikrEstimatesToPayload(parsed)).toEqual([
-      { fiscalYearEnd: "2027-01-31", salesGrowth: 0.30 },
-      { fiscalYearEnd: "2028-01-31", salesGrowth: 0.30 },
+      { fiscalYearEnd: "2027-01-31", salesGrowth: 0.3 },
+      { fiscalYearEnd: "2028-01-31", salesGrowth: 0.3 },
     ])
   })
 

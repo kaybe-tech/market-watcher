@@ -608,12 +608,15 @@ const setupWithCompleteFinancialsViaRoute = (ticker: string) => {
 
 describe("GET /companies/:ticker con estimates", () => {
   it("response incluye valuationWithEstimates cuando hay estimates", async () => {
-    const { app, company, repository } = setupWithCompleteFinancialsViaRoute("AMZN")
+    const { app, company, repository } =
+      setupWithCompleteFinancialsViaRoute("AMZN")
     await waitForBackgroundValuation(repository, "AMZN")
 
     company.ingestEstimates("AMZN", {
       source: "tikr",
-      years: [{ fiscalYearEnd: "2026-12-31", salesGrowth: 0.15, ebitMargin: 0.10 }],
+      years: [
+        { fiscalYearEnd: "2026-12-31", salesGrowth: 0.15, ebitMargin: 0.1 },
+      ],
     })
     await company.valuate("AMZN")
 
