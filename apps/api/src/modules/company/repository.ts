@@ -180,4 +180,20 @@ export class CompanyRepository {
       .all()
     return row ?? null
   }
+
+  listLatestValuationsBySource(ticker: string): Record<string, ValuationRow> {
+    const rows = this.db
+      .select()
+      .from(valuations)
+      .where(eq(valuations.ticker, ticker))
+      .orderBy(desc(valuations.createdAt), desc(valuations.id))
+      .all()
+    const out: Record<string, ValuationRow> = {}
+    for (const row of rows) {
+      if (!(row.source in out)) {
+        out[row.source] = row
+      }
+    }
+    return out
+  }
 }

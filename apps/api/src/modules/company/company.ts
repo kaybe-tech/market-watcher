@@ -106,13 +106,15 @@ export type CompanyView = {
   ticker: string
   latestFiscalYearEnd: string | null
   currentPrice: number | null
-  valuation: ValuationRow | null
-  valuationWithEstimates: ValuationRow | null
+  valuations: Record<string, ValuationRow>
   availableEstimateSources: string[]
   pending: boolean
   valuationInProgress: boolean
   missing?: MissingSummary
 }
+
+export const AUTO_SOURCE = "auto"
+export const MERGED_ESTIMATES_SOURCE = "merged_estimates"
 
 export type CompanyListItemSummary = {
   buyPrice: number | null
@@ -296,44 +298,6 @@ export class Company {
     return items
   }
 
-  runOnTheFlyValuationBySource(
-    ticker: string,
-    source: string,
-  ): CompanyValuation | null {
-    const state = this.repository.getTickerState(ticker)
-    if (!state || state.latestFiscalYearEnd === null) return null
-    if (state.currentPrice === null) return null
-
-    const estimateRows = this.repository
-      .listEstimatesForTicker(ticker)
-      .filter((row) => row.source === source)
-    if (estimateRows.length === 0) return null
-
-    const rows = this.repository.listYearlyFinancialsForTicker(ticker)
-    const series = this.consolidateConsecutiveYears(
-      rows,
-      state.latestFiscalYearEnd,
-    )
-    if (series.length < MIN_CONSECUTIVE_YEARS_FOR_VALUATION) return null
-
-    const financials = this.buildEngineFinancials(series)
-    const overrides = mergeOverrides(estimateRows)
-    try {
-      return new CompanyValuation({
-        ticker,
-        currentPrice: state.currentPrice,
-        financials,
-        overrides,
-      })
-    } catch (err) {
-      console.error(
-        `on-the-fly valuation for ${ticker} source=${source} failed:`,
-        err,
-      )
-      return null
-    }
-  }
-
   async getCompanyView(ticker: string): Promise<CompanyView | null> {
     const initialState = this.repository.getTickerState(ticker)
     if (initialState === null) return null
@@ -348,11 +312,7 @@ export class Company {
       ticker,
       latestFiscalYearEnd: state.latestFiscalYearEnd,
       currentPrice: state.currentPrice,
-      valuation: this.repository.getLatestValuationBySource(ticker, "auto"),
-      valuationWithEstimates: this.repository.getLatestValuationBySource(
-        ticker,
-        "merged_estimates",
-      ),
+      valuations: this.repository.listLatestValuationsBySource(ticker),
       availableEstimateSources: this.repository.listSourcesForTicker(ticker),
       pending: state.pendingValuation,
       valuationInProgress: this.hasValuationInProgress(ticker),
@@ -410,6 +370,24 @@ export class Company {
         estimateRows,
         createdAt,
       )
+
+      const rowsBySource = new Map<string, YearlyEstimatesRow[]>()
+      for (const row of estimateRows) {
+        const bucket = rowsBySource.get(row.source) ?? []
+        bucket.push(row)
+        rowsBySource.set(row.source, bucket)
+      }
+      for (const [source, rows] of rowsBySource) {
+        this.runSourceEstimatesValuation(
+          ticker,
+          state.currentPrice,
+          state.latestFiscalYearEnd,
+          financials,
+          rows,
+          source,
+          createdAt,
+        )
+      }
     }
 
     this.repository.updateTickerState(ticker, { pendingValuation: false })
@@ -463,11 +441,43 @@ export class Company {
         fiscalYearEnd,
         result: valuation,
         createdAt,
-        source: "merged_estimates",
+        source: MERGED_ESTIMATES_SOURCE,
       })
     } catch (err) {
       console.error(
         `valuation engine (merged_estimates) failed for ${ticker}:`,
+        err,
+      )
+    }
+  }
+
+  private runSourceEstimatesValuation(
+    ticker: string,
+    currentPrice: number,
+    fiscalYearEnd: string,
+    financials: Record<number, CompanyYearFinancials>,
+    estimateRows: YearlyEstimatesRow[],
+    source: string,
+    createdAt: string,
+  ): void {
+    const overrides = mergeOverrides(estimateRows)
+    try {
+      const valuation = new CompanyValuation({
+        ticker,
+        currentPrice,
+        financials,
+        overrides,
+      })
+      this.repository.insertValuation({
+        ticker,
+        fiscalYearEnd,
+        result: valuation,
+        createdAt,
+        source,
+      })
+    } catch (err) {
+      console.error(
+        `valuation engine (source=${source}) failed for ${ticker}:`,
         err,
       )
     }

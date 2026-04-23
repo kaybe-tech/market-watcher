@@ -754,6 +754,40 @@ button {
 	margin: 0 8px;
 	color: var(--color-border-strong);
 }
+.source-picker {
+	margin-left: auto;
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	font-family: var(--font-mono);
+	font-size: 11px;
+	color: var(--color-text-dim);
+	text-transform: uppercase;
+	letter-spacing: 0.06em;
+	flex-shrink: 0;
+}
+.source-picker-label {
+	white-space: nowrap;
+}
+.source-picker select {
+	font-family: var(--font-mono);
+	font-size: 12px;
+	text-transform: none;
+	letter-spacing: 0;
+	color: var(--color-text);
+	background: var(--color-bg-panel);
+	border: 1px solid var(--color-border);
+	border-radius: 4px;
+	padding: 4px 8px;
+	cursor: pointer;
+}
+.source-picker select:focus {
+	outline: none;
+	border-color: var(--color-accent);
+}
+.detail-header .source-picker ~ .detail-price-block {
+	margin-left: 0;
+}
 
 /* Cards */
 .cards-row {

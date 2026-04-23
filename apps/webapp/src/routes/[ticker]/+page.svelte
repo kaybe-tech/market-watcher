@@ -1,5 +1,6 @@
 <script lang="ts">
 import { goto, invalidateAll } from "$app/navigation"
+import { page } from "$app/state"
 import AssumptionsTab from "$lib/components/AssumptionsTab.svelte"
 import OverviewTab from "$lib/components/OverviewTab.svelte"
 import ProjectionsTab from "$lib/components/ProjectionsTab.svelte"
@@ -12,6 +13,7 @@ import {
   pctUnsigned,
   relTime,
 } from "$lib/format"
+import { AUTO_SOURCE, MERGED_ESTIMATES_SOURCE } from "$lib/valuation-sources"
 
 let { data } = $props()
 let tab = $state<"overview" | "projections" | "assumptions">("overview")
@@ -20,6 +22,32 @@ const now = new Date()
 
 const view = $derived(data.view)
 const valuation = $derived(data.valuation)
+const availableSources = $derived(data.availableSources)
+const selectedSource = $derived(data.selectedSource)
+const selectedValuationRow = $derived(
+  selectedSource && view ? (view.valuations[selectedSource] ?? null) : null,
+)
+
+const labelForSource = (source: string): string => {
+  if (source === AUTO_SOURCE) return "Automática"
+  if (source === MERGED_ESTIMATES_SOURCE) return "Mezcla de estimates"
+  return source
+    .split(/[-_\s]+/)
+    .map((part) => (part ? part[0]?.toUpperCase() + part.slice(1) : part))
+    .join(" ")
+}
+
+const handleSourceChange = (event: Event) => {
+  const target = event.currentTarget as HTMLSelectElement
+  const next = target.value
+  const url = new URL(page.url)
+  if (next === AUTO_SOURCE) {
+    url.searchParams.delete("source")
+  } else {
+    url.searchParams.set("source", next)
+  }
+  void goto(url, { keepFocus: true, noScroll: true })
+}
 
 const firstProjYear = $derived.by(() => {
   if (!valuation) return null
@@ -90,14 +118,24 @@ const cagr3y = $derived.by(() => {
 					<span style="color: var(--color-accent);">Valoración en curso…</span>
 				{:else if view.pending}
 					<span style="color: var(--color-amber);">Sin valoración · pending</span>
-				{:else if view.valuation?.createdAt}
+				{:else if selectedValuationRow?.createdAt}
 					Valoración
-					<span class="tooltip-anchor" data-tooltip={fullTime(view.valuation.createdAt)}>
-						{relTime(view.valuation.createdAt, now)}
+					<span class="tooltip-anchor" data-tooltip={fullTime(selectedValuationRow.createdAt)}>
+						{relTime(selectedValuationRow.createdAt, now)}
 					</span>
 				{/if}
 			</div>
 		</div>
+		{#if !view.pending && !view.valuationInProgress && availableSources.length > 1 && selectedSource}
+			<label class="source-picker">
+				<span class="source-picker-label">Valoración</span>
+				<select value={selectedSource} onchange={handleSourceChange}>
+					{#each availableSources as source (source)}
+						<option value={source}>{labelForSource(source)}</option>
+					{/each}
+				</select>
+			</label>
+		{/if}
 		{#if view.currentPrice != null}
 			<div class="detail-price-block">
 				<span class="detail-price mono">{money(view.currentPrice)}</span>
