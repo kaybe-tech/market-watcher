@@ -239,10 +239,10 @@ describe("E2E criterio 6 — GET devuelve la última valoración", () => {
     const res = await getCompany(app, "AAPL")
     expect(res.status).toBe(200)
     const parsed = (await res.json()) as {
-      valuation: { id: number; result: unknown } | null
+      valuations: Record<string, { id: number; result: unknown }>
     }
-    expect(parsed.valuation?.id).toBe(winner.id)
-    expect(parsed.valuation?.result).toEqual({ tag: "winner" })
+    expect(parsed.valuations.auto?.id).toBe(winner.id)
+    expect(parsed.valuations.auto?.result).toEqual({ tag: "winner" })
   })
 })
 

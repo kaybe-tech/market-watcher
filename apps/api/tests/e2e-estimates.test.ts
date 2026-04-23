@@ -58,42 +58,27 @@ describe("E2E estimates", () => {
 
     const getRes = await app.request("/companies/AMZN")
     expect(getRes.status).toBe(200)
-    const body = (await getRes.json()) as Record<string, unknown>
-    expect(body.valuation).not.toBeNull()
-    expect(body.valuationWithEstimates).not.toBeNull()
+    const body = (await getRes.json()) as {
+      valuations: Record<
+        string,
+        { result: { intrinsicValue: { buyPrice: { price: number } } } }
+      >
+      availableEstimateSources: string[]
+    }
+    expect(body.valuations.auto).toBeDefined()
+    expect(body.valuations.merged_estimates).toBeDefined()
+    expect(body.valuations.tikr).toBeDefined()
     expect(body.availableEstimateSources).toEqual(["tikr"])
 
-    type ValuationRow = {
-      result: { intrinsicValue: { buyPrice: { price: number } } }
-    }
-    const auto = body.valuation as ValuationRow
-    const withEst = body.valuationWithEstimates as ValuationRow
+    const auto = body.valuations.auto
+    const merged = body.valuations.merged_estimates
+    const tikr = body.valuations.tikr
+    if (!auto || !merged || !tikr) throw new Error("expected all valuations")
     expect(auto.result.intrinsicValue.buyPrice.price).not.toBeCloseTo(
-      withEst.result.intrinsicValue.buyPrice.price,
+      merged.result.intrinsicValue.buyPrice.price,
     )
-  })
-
-  it("GET source aislada on-the-fly funciona", async () => {
-    const { app, repository } = setupApp()
-
-    await app.request("/companies/AMZN/data", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(toIngestBody(amznFixture)),
-    })
-    await app.request("/companies/AMZN/estimates", {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify({
-        source: "tikr",
-        years: [{ fiscalYearEnd: ESTIMATE_YEAR_1, salesGrowth: 0.15 }],
-      }),
-    })
-    await waitForBackgroundValuation(repository, "AMZN")
-
-    const res = await app.request("/companies/AMZN/valuations?source=tikr")
-    expect(res.status).toBe(200)
-    const resBody = (await res.json()) as Record<string, unknown>
-    expect(resBody.intrinsicValue).toBeDefined()
+    expect(merged.result.intrinsicValue.buyPrice.price).toBeCloseTo(
+      tikr.result.intrinsicValue.buyPrice.price,
+    )
   })
 })

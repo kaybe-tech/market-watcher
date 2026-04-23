@@ -340,17 +340,21 @@ describe("POST /companies/:ticker/data - fallos de persistencia 500", () => {
 const getCompany = (app: AppInstance, ticker: string) =>
   app.request(`/companies/${ticker}`)
 
+type ValuationRowBody = {
+  id: number
+  ticker: string
+  fiscalYearEnd: string
+  createdAt: string
+  source: string
+  result: unknown
+}
+
 type GetCompanyBody = {
   ticker: string
   latestFiscalYearEnd: string | null
   currentPrice: number | null
-  valuation: {
-    id: number
-    ticker: string
-    fiscalYearEnd: string
-    createdAt: string
-    result: unknown
-  } | null
+  valuations: Record<string, ValuationRowBody>
+  availableEstimateSources: string[]
   pending: boolean
   valuationInProgress: boolean
   missing?: {
@@ -389,8 +393,8 @@ describe("GET /companies/:ticker", () => {
     expect(body.ticker).toBe("AMZN")
     expect(body.pending).toBe(false)
     expect(body.valuationInProgress).toBe(false)
-    expect(body.valuation).not.toBeNull()
-    expect(body.valuation?.fiscalYearEnd).toBe("2025-12-31")
+    expect(body.valuations.auto).toBeDefined()
+    expect(body.valuations.auto?.fiscalYearEnd).toBe("2025-12-31")
     expect(body.missing).toBeUndefined()
   })
 
@@ -410,7 +414,7 @@ describe("GET /companies/:ticker", () => {
     expect(res.status).toBe(200)
     const parsed = (await res.json()) as GetCompanyBody
     expect(parsed.pending).toBe(false)
-    expect(parsed.valuation).not.toBeNull()
+    expect(parsed.valuations.auto).toBeDefined()
     expect(parsed.missing).toBeUndefined()
   })
 
@@ -433,7 +437,7 @@ describe("GET /companies/:ticker", () => {
     expect(body.currentPrice).toBeNull()
     expect(body.missing?.ticker).toEqual(["currentPrice"])
     expect(body.missing?.years).toBeUndefined()
-    expect(body.valuation).toBeNull()
+    expect(body.valuations).toEqual({})
   })
 
   it("ticker pendiente con serie consecutiva < 2 → pending=true, missing.years enumera años incompletos", async () => {
@@ -538,9 +542,9 @@ describe("GET /companies/:ticker", () => {
 
     expect(res.status).toBe(200)
     const body = (await res.json()) as GetCompanyBody
-    expect(body.valuation?.id).toBe(third.id)
-    expect(body.valuation?.id).toBeGreaterThan(second.id)
-    expect(body.valuation?.result).toEqual({ tag: "third" })
+    expect(body.valuations.auto?.id).toBe(third.id)
+    expect(body.valuations.auto?.id).toBeGreaterThan(second.id)
+    expect(body.valuations.auto?.result).toEqual({ tag: "third" })
   })
 })
 
@@ -607,7 +611,7 @@ const setupWithCompleteFinancialsViaRoute = (ticker: string) => {
 }
 
 describe("GET /companies/:ticker con estimates", () => {
-  it("response incluye valuationWithEstimates cuando hay estimates", async () => {
+  it("response incluye todas las valoraciones por source cuando hay estimates", async () => {
     const { app, company, repository } =
       setupWithCompleteFinancialsViaRoute("AMZN")
     await waitForBackgroundValuation(repository, "AMZN")
@@ -622,49 +626,45 @@ describe("GET /companies/:ticker con estimates", () => {
 
     const res = await app.request("/companies/AMZN")
     expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.valuation).not.toBeNull()
-    expect(body.valuationWithEstimates).not.toBeNull()
+    const body = (await res.json()) as GetCompanyBody
+    expect(body.valuations.auto).toBeDefined()
+    expect(body.valuations.merged_estimates).toBeDefined()
+    expect(body.valuations.tikr).toBeDefined()
     expect(body.availableEstimateSources).toEqual(["tikr"])
   })
 
-  it("valuationWithEstimates es null cuando no hay estimates", async () => {
+  it("valuations solo contiene auto cuando no hay estimates", async () => {
     const { app, repository } = setupWithCompleteFinancialsViaRoute("AMZN")
     await waitForBackgroundValuation(repository, "AMZN")
 
     const res = await app.request("/companies/AMZN")
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.valuationWithEstimates).toBeNull()
+    const body = (await res.json()) as GetCompanyBody
+    expect(Object.keys(body.valuations)).toEqual(["auto"])
     expect(body.availableEstimateSources).toEqual([])
   })
-})
 
-describe("GET /companies/:ticker/valuations?source=<source>", () => {
-  it("devuelve valoración on-the-fly para una source con datos", async () => {
-    const { app, company } = setupWithCompleteFinancialsViaRoute("AMZN")
+  it("genera una valoración independiente por cada source distinto", async () => {
+    const { app, company, repository } =
+      setupWithCompleteFinancialsViaRoute("AMZN")
+    await waitForBackgroundValuation(repository, "AMZN")
+
     company.ingestEstimates("AMZN", {
       source: "tikr",
-      years: [
-        { fiscalYearEnd: "2026-12-31", salesGrowth: 0.45, ebitMargin: 0.62 },
-      ],
+      years: [{ fiscalYearEnd: "2026-12-31", salesGrowth: 0.15 }],
+    })
+    company.ingestEstimates("AMZN", {
+      source: "manual",
+      years: [{ fiscalYearEnd: "2026-12-31", salesGrowth: 0.4 }],
     })
     await company.valuate("AMZN")
-    const res = await app.request("/companies/AMZN/valuations?source=tikr")
-    expect(res.status).toBe(200)
-    const body = (await res.json()) as Record<string, unknown>
-    expect(body.intrinsicValue).toBeDefined()
-  })
 
-  it("404 si la source no tiene datos para el ticker", async () => {
-    const { app } = setupWithCompleteFinancialsViaRoute("AMZN")
-    const res = await app.request("/companies/AMZN/valuations?source=tikr")
-    expect(res.status).toBe(404)
-  })
-
-  it("400 si source no está presente", async () => {
-    const { app } = setupWithCompleteFinancialsViaRoute("AMZN")
-    const res = await app.request("/companies/AMZN/valuations")
-    expect(res.status).toBe(400)
+    const res = await app.request("/companies/AMZN")
+    const body = (await res.json()) as GetCompanyBody
+    expect(body.valuations.auto).toBeDefined()
+    expect(body.valuations.merged_estimates).toBeDefined()
+    expect(body.valuations.tikr).toBeDefined()
+    expect(body.valuations.manual).toBeDefined()
+    expect(body.availableEstimateSources.sort()).toEqual(["manual", "tikr"])
   })
 })
 

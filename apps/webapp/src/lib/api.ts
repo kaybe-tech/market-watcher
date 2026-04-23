@@ -1,5 +1,5 @@
 import { PUBLIC_API_URL } from "$env/static/public"
-import type { CompanyListItem, CompanyValuation, CompanyView } from "./types"
+import type { CompanyListItem, CompanyView } from "./types"
 
 const baseUrl = (): string => PUBLIC_API_URL || "http://localhost:3000"
 
@@ -31,13 +31,3 @@ export const fetchCompanyView = (
   ticker: string,
   fetchFn: FetchFn = fetch,
 ): Promise<CompanyView> => request<CompanyView>(fetchFn, `/companies/${ticker}`)
-
-export const fetchCompanyValuation = (
-  ticker: string,
-  source = "auto",
-  fetchFn: FetchFn = fetch,
-): Promise<CompanyValuation> =>
-  request<CompanyValuation>(
-    fetchFn,
-    `/companies/${ticker}/valuations?source=${source}`,
-  )

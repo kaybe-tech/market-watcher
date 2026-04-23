@@ -158,7 +158,7 @@ describe("Company.valuate con estimates", () => {
     return { company, repository }
   }
 
-  it("genera dos valuations (auto y merged_estimates) cuando hay estimates", async () => {
+  it("genera auto, merged_estimates y una por cada source individual cuando hay estimates", async () => {
     const { company, repository } = setupWithCompleteFinancials("AMZN")
     company.ingestEstimates("AMZN", {
       source: "tikr",
@@ -166,10 +166,16 @@ describe("Company.valuate con estimates", () => {
         { fiscalYearEnd: "2026-12-31", salesGrowth: 0.15, ebitMargin: 0.1 },
       ],
     })
+    company.ingestEstimates("AMZN", {
+      source: "manual",
+      years: [{ fiscalYearEnd: "2026-12-31", salesGrowth: 0.3 }],
+    })
     await company.valuate("AMZN")
     const all = repository.listValuationsForTicker("AMZN")
     const sources = new Set(all.map((v) => v.source))
-    expect(sources).toEqual(new Set(["auto", "merged_estimates"]))
+    expect(sources).toEqual(
+      new Set(["auto", "merged_estimates", "tikr", "manual"]),
+    )
   })
 
   it("solo genera auto si no hay estimates", async () => {

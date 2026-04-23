@@ -187,10 +187,10 @@ export type CompanyView = {
   ticker: string
   latestFiscalYearEnd: string | null
   currentPrice: number | null
-  valuation: ValuationRow | null
-  valuationWithEstimates: ValuationRow | null
+  valuations: Record<string, ValuationRow>
   availableEstimateSources: string[]
   pending: boolean
   valuationInProgress: boolean
   missing?: MissingSummary
 }
+
