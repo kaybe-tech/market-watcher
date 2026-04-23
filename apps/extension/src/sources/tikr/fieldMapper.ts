@@ -128,7 +128,10 @@ const CASH_FLOW_FIELDS: FieldDefinition[] = [
   },
 ]
 
-const FIELDS_BY_SECTION: Record<Exclude<TikrSection, "estimates">, FieldDefinition[]> = {
+const FIELDS_BY_SECTION: Record<
+  Exclude<TikrSection, "estimates">,
+  FieldDefinition[]
+> = {
   incomeStatement: INCOME_STATEMENT_FIELDS,
   balanceSheet: BALANCE_SHEET_FIELDS,
   cashFlowStatement: CASH_FLOW_FIELDS,

@@ -167,11 +167,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "yearly_estimates_ticker_fiscal_year_end_source_pk": {
-          "columns": [
-            "ticker",
-            "fiscal_year_end",
-            "source"
-          ],
+          "columns": ["ticker", "fiscal_year_end", "source"],
           "name": "yearly_estimates_ticker_fiscal_year_end_source_pk"
         }
       },
@@ -347,10 +343,7 @@
       "foreignKeys": {},
       "compositePrimaryKeys": {
         "yearly_financials_ticker_fiscal_year_end_pk": {
-          "columns": [
-            "ticker",
-            "fiscal_year_end"
-          ],
+          "columns": ["ticker", "fiscal_year_end"],
           "name": "yearly_financials_ticker_fiscal_year_end_pk"
         }
       },

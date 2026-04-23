@@ -32,6 +32,14 @@
       "semicolons": "asNeeded"
     }
   },
+  "css": {
+    "parser": {
+      "tailwindDirectives": true
+    },
+    "formatter": {
+      "indentStyle": "tab"
+    }
+  },
   "assist": {
     "enabled": true,
     "actions": {
@@ -48,6 +56,16 @@
           "correctness": {
             "noUnusedVariables": "off",
             "noUnusedImports": "off"
+          }
+        }
+      }
+    },
+    {
+      "includes": ["apps/webapp/src/app.css"],
+      "linter": {
+        "rules": {
+          "style": {
+            "noDescendingSpecificity": "off"
           }
         }
       }
