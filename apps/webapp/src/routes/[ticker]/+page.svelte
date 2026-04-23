@@ -41,11 +41,7 @@ const handleSourceChange = (event: Event) => {
   const target = event.currentTarget as HTMLSelectElement
   const next = target.value
   const url = new URL(page.url)
-  if (next === AUTO_SOURCE) {
-    url.searchParams.delete("source")
-  } else {
-    url.searchParams.set("source", next)
-  }
+  url.searchParams.set("source", next)
   void goto(url, { keepFocus: true, noScroll: true })
 }
 
